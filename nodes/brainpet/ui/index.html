@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>brainpet</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #f472b6;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --error: #ef4444;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+    }
+    header h1 { font-size: 14px; color: var(--accent); letter-spacing: 0.02em; }
+    .hint { font-size: 11px; color: var(--muted); }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 12px;
+      background: var(--bg); border: 1px solid var(--border); font-size: 11px;
+    }
+    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .pill.ok .dot { background: var(--ok); }
+    .pill.warn .dot { background: var(--warn); }
+    .pill.err .dot { background: var(--error); }
+
+    main {
+      flex: 1; padding: 18px; overflow: auto;
+      display: grid; gap: 16px;
+      grid-template-columns: minmax(320px, 460px) 1fr;
+      max-width: 1080px; width: 100%; margin: 0 auto;
+    }
+    @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .card h2 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); margin-bottom: 10px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+
+    .stage {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+      position: relative; overflow: hidden;
+    }
+    #petCanvas { display: block; width: 100%; height: 100%; }
+    .stage .nameplate {
+      position: absolute; top: 12px; left: 14px; right: 14px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: none;
+    }
+    .stage .name {
+      font: 700 18px/1 ui-sans-serif, system-ui; color: var(--text);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    .stage .age {
+      font: 600 11px ui-monospace, monospace; color: var(--muted);
+      background: rgba(15,23,42,0.55); padding: 2px 8px; border-radius: 10px;
+    }
+    .stage .stage-pill {
+      position: absolute; bottom: 10px; left: 10px;
+      font-size: 10px; color: var(--muted);
+      background: rgba(15,23,42,0.55); padding: 2px 8px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .stage .emoji-overlay {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .stage .emoji-overlay .em {
+      position: absolute; will-change: transform, opacity;
+      font-size: 36px; line-height: 1;
+      transform: translate(-50%, -50%);
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35));
+    }
+
+    .stats { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+    .stat { display: grid; grid-template-columns: 28px 1fr 40px; gap: 8px; align-items: center; }
+    .stat .icon { font-size: 18px; line-height: 1; }
+    .stat .bar { background: var(--panel-2); height: 8px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+    .stat .fill { height: 100%; border-radius: 3px; transition: width 0.4s, background 0.2s; }
+    .stat .v { font: 600 11px ui-monospace, monospace; color: var(--muted); text-align: right; }
+    .fill.health      { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .fill.hunger      { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .fill.happiness   { background: linear-gradient(90deg, #ec4899, #f472b6); }
+    .fill.energy      { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
+    .fill.cleanliness { background: linear-gradient(90deg, #6366f1, #a5b4fc); }
+    .fill.bond        { background: linear-gradient(90deg, #22c55e, #4ade80); }
+    .fill.low { background: linear-gradient(90deg, #dc2626, #b91c1c) !important; }
+
+    .personality {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px;
+    }
+    .trait {
+      font: 11px ui-monospace, monospace; padding: 2px 8px; border-radius: 10px;
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+    }
+    .trait.strong { color: var(--text); border-color: var(--accent); }
+
+    .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    button.primary, button.ghost, button.danger {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      padding: 6px 12px; border-radius: 4px; font: inherit; font-size: 12px;
+      cursor: pointer;
+    }
+    button.primary { background: var(--accent); color: #1a0a14; border-color: var(--accent); font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: #ec4899; }
+    button.ghost:hover { border-color: var(--accent); }
+    button.danger { background: var(--error); color: white; border-color: var(--error); }
+    button.danger:hover { background: #c53030; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    input[type=text] {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      padding: 6px 10px; border-radius: 4px; font: inherit; font-size: 13px;
+    }
+    .grow { flex: 1; min-width: 200px; }
+
+    .narration {
+      max-height: 380px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .narration .line {
+      padding: 6px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+      font-size: 12px; line-height: 1.45; white-space: pre-wrap;
+    }
+    .narration .empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 8px 0; }
+    .narration code, .narration strong { background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+
+    .cemetery {
+      display: flex; flex-direction: column; gap: 6px;
+      max-height: 260px; overflow-y: auto;
+    }
+    .grave {
+      padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+      font-size: 12px; cursor: pointer; transition: border-color 0.12s;
+    }
+    .grave:hover { border-color: var(--accent); }
+    .grave .name { font-weight: 600; color: var(--text); }
+    .grave .meta { font-size: 10px; color: var(--muted); margin-top: 2px; font-family: ui-monospace, monospace; }
+    .grave .epitaph { font-style: italic; color: var(--muted); margin-top: 4px; }
+    .grave .cause { font-size: 10px; color: var(--warn); }
+
+    /* Modal — clicking a grave opens it */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      padding: 20px; max-width: 520px; width: calc(100% - 40px);
+      max-height: 86vh; overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+    }
+    .modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .modal h3 { font-size: 16px; color: var(--text); }
+    .modal .close-btn {
+      background: transparent; color: var(--muted); border: none;
+      font-size: 22px; cursor: pointer; line-height: 1;
+    }
+    .modal .close-btn:hover { color: var(--text); }
+    .modal-body {
+      display: grid; grid-template-columns: 160px 1fr; gap: 16px; align-items: start;
+    }
+    @media (max-width: 540px) { .modal-body { grid-template-columns: 1fr; } }
+    .modal canvas {
+      width: 160px; height: 160px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .modal .grave-stats { display: flex; flex-direction: column; gap: 6px; }
+    .modal .grave-stats .stat { grid-template-columns: 24px 1fr 36px; }
+    .modal .grave-section {
+      margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);
+    }
+    .modal .grave-section h4 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .modal .grave-history { display: flex; flex-direction: column; gap: 4px; }
+    .modal .grave-history .turn {
+      padding: 5px 8px; border-radius: 4px; font-size: 12px;
+      background: var(--bg); border: 1px solid var(--border);
+    }
+    .modal .grave-history .turn.user { background: var(--panel-2); }
+    .modal .grave-history .turn .who { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; margin-bottom: 2px; }
+    .modal .grave-epitaph {
+      font-style: italic; color: var(--text); margin-top: 8px;
+      padding: 8px 10px; background: var(--bg); border-left: 3px solid var(--accent); border-radius: 4px;
+    }
+    .modal .grave-meta {
+      font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace;
+      margin-top: 4px;
+    }
+    .modal .grave-cause {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      background: rgba(239,68,68,0.15); color: var(--error); font-size: 11px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>brainpet</h1>
+      <div class="hint">A persistent little creature on the bus. Talk to it by name. It feels things.</div>
+    </div>
+    <div class="pill" id="status"><span class="dot"></span><span id="status-text">no pet yet</span></div>
+  </header>
+
+  <main>
+
+    <!-- LEFT: stage + stats -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="card">
+        <h2><span>Habitat</span><span class="hint" id="anim-hint">idle</span></h2>
+        <div class="stage" id="stage">
+          <canvas id="petCanvas" width="600" height="600"></canvas>
+          <div class="emoji-overlay" id="emoji-overlay"></div>
+          <div class="nameplate">
+            <div class="name" id="pet-name">—</div>
+            <div class="age" id="pet-age">—</div>
+          </div>
+          <div class="stage-pill" id="stage-pill">—</div>
+        </div>
+        <div class="stats">
+          <div class="stat" title="Health (HP) — the ONLY lifebar. Drops from violence and from being chronically hungry / dirty / miserable (low stats slowly drain HP). Sleep + good care heal. Hitting 0 = death."><span class="icon">❤️</span><div class="bar"><div class="fill health" id="stat-health" style="width:0%"></div></div><span class="v" id="v-health">—</span></div>
+          <div class="stat" title="Hunger — how fed the pet is. 100 = full, 0 = starving. Not lethal on its own, but at 0 it gradually drains HP — the pet weakens and dies if not fed within ~an hour."><span class="icon">🍴</span><div class="bar"><div class="fill hunger" id="stat-hunger" style="width:0%"></div></div><span class="v" id="v-hunger">—</span></div>
+          <div class="stat" title="Happiness — mood. Affection, play and praise lift it; threats and neglect drop it. Very low happiness slowly chips at HP."><span class="icon">😊</span><div class="bar"><div class="fill happiness" id="stat-happiness" style="width:0%"></div></div><span class="v" id="v-happiness">—</span></div>
+          <div class="stat" title="Energy — how rested the pet is. Drops with play / stress; rises while sleeping."><span class="icon">⚡</span><div class="bar"><div class="fill energy" id="stat-energy" style="width:0%"></div></div><span class="v" id="v-energy">—</span></div>
+          <div class="stat" title="Cleanliness — grooming. Decays slowly; baths restore it. Low values nudge mood and personality."><span class="icon">🛁</span><div class="bar"><div class="fill cleanliness" id="stat-cleanliness" style="width:0%"></div></div><span class="v" id="v-cleanliness">—</span></div>
+          <div class="stat" title="Bond — relationship strength with the people who talk to the pet. Mostly grows with positive interactions; betrayal makes it drop."><span class="icon">💞</span><div class="bar"><div class="fill bond" id="stat-bond" style="width:0%"></div></div><span class="v" id="v-bond">—</span></div>
+        </div>
+        <div class="personality" id="personality" title="Personality traits — slow-moving averages derived from how the pet has been treated over its lifetime. Each pill: cheerful (driven by sustained happiness), clean (cleanliness), energetic (energy), social (interaction frequency)."></div>
+      </div>
+
+      <div class="card">
+        <h2>Care</h2>
+        <div class="row">
+          <button class="ghost" data-action="feed">🍴 feed</button>
+          <button class="ghost" data-action="play">🎾 play</button>
+          <button class="ghost" data-action="cuddle">💞 cuddle</button>
+          <button class="ghost" data-action="clean">🛁 clean</button>
+          <button class="ghost" data-action="sleep">😴 sleep</button>
+          <button class="ghost" data-action="wake">☀️ wake</button>
+          <button class="ghost" data-action="status">⟳ status</button>
+        </div>
+        <div class="row" style="margin-top: 8px;">
+          <button class="primary" data-action="birth" id="btn-birth">🥚 hatch a new pet</button>
+          <button class="danger" data-action="kill" id="btn-kill">💀 kill</button>
+        </div>
+        <div class="row" style="margin-top: 8px;">
+          <input id="rename" type="text" class="grow" placeholder="Rename to…" />
+          <button class="ghost" id="btn-rename">rename</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: talk + narration + cemetery -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="card">
+        <h2>Talk to your pet</h2>
+        <div class="row">
+          <input id="talk" type="text" class="grow" placeholder="Say something to your pet…" />
+          <button class="primary" id="btn-talk">say</button>
+        </div>
+        <p class="hint" style="margin-top: 6px;">
+          The pet hears you when you mention its name from any chat surface. The dialogue echoes everywhere — web chat, Telegram, WhatsApp, Discord.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Recent</h2>
+        <div class="narration" id="narration">
+          <div class="empty">Whatever your pet says appears here — also on every connected chat surface.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span>Cemetery</span><span class="hint" id="cemetery-count">0</span></h2>
+        <div class="cemetery" id="cemetery">
+          <div class="empty hint">No graves yet.</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Grave detail modal — opens when you click a tombstone -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" id="modal">
+      <div class="modal-head">
+        <h3 id="modal-name">—</h3>
+        <button class="close-btn" id="modal-close" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <canvas id="modal-canvas" width="320" height="320"></canvas>
+        <div>
+          <div id="modal-meta" class="grave-meta">—</div>
+          <span id="modal-cause" class="grave-cause">—</span>
+          <div class="grave-section">
+            <h4>Final stats</h4>
+            <div id="modal-stats" class="grave-stats stats"></div>
+          </div>
+          <div class="grave-section">
+            <h4>Personality</h4>
+            <div id="modal-personality" class="personality"></div>
+          </div>
+        </div>
+      </div>
+      <div class="grave-section">
+        <h4>Epitaph</h4>
+        <div id="modal-epitaph" class="grave-epitaph">—</div>
+      </div>
+      <div class="grave-section" id="modal-history-section">
+        <h4>Last words</h4>
+        <div id="modal-history" class="grave-history"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Bus glue ────────────────────────────────────────────────────────
+    const nodeId = window.location.pathname.split('/nodes/')[1]?.split('/ui')[0];
+    const apiBase = window.location.origin;
+
+    const els = {
+      status: document.getElementById('status'),
+      statusText: document.getElementById('status-text'),
+      animHint: document.getElementById('anim-hint'),
+      canvas: document.getElementById('petCanvas'),
+      name: document.getElementById('pet-name'),
+      age: document.getElementById('pet-age'),
+      stagePill: document.getElementById('stage-pill'),
+      health: document.getElementById('stat-health'),
+      hunger: document.getElementById('stat-hunger'),
+      happiness: document.getElementById('stat-happiness'),
+      energy: document.getElementById('stat-energy'),
+      cleanliness: document.getElementById('stat-cleanliness'),
+      bond: document.getElementById('stat-bond'),
+      vHealth: document.getElementById('v-health'),
+      vHunger: document.getElementById('v-hunger'),
+      vHappiness: document.getElementById('v-happiness'),
+      vEnergy: document.getElementById('v-energy'),
+      vCleanliness: document.getElementById('v-cleanliness'),
+      vBond: document.getElementById('v-bond'),
+      personality: document.getElementById('personality'),
+      narration: document.getElementById('narration'),
+      cemetery: document.getElementById('cemetery'),
+      cemeteryCount: document.getElementById('cemetery-count'),
+      btnBirth: document.getElementById('btn-birth'),
+      btnKill: document.getElementById('btn-kill'),
+      btnRename: document.getElementById('btn-rename'),
+      rename: document.getElementById('rename'),
+      talk: document.getElementById('talk'),
+      btnTalk: document.getElementById('btn-talk'),
+    };
+
+    let lastMessageId = null;
+    let pet = null;     // current state from brainpet.state
+    let cemetery = [];  // from brainpet.cemetery
+    let currentAnim = "idle";
+    let animLockUntil = 0;  // ms — transient animations override the idle state for a moment
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function setStatusPill(state, text) {
+      els.status.className = `pill ${state}`;
+      els.statusText.textContent = text;
+    }
+
+    async function pollMessages() {
+      try {
+        const res = await fetch(`${apiBase}/nodes/${nodeId}/ui/messages`);
+        if (!res.ok) { setStatusPill('err', 'node not running'); return; }
+        const messages = await res.json();
+        let startIdx = 0;
+        if (lastMessageId) {
+          const idx = messages.findIndex((m) => m.id === lastMessageId);
+          if (idx >= 0) startIdx = idx + 1;
+        }
+        for (const msg of messages.slice(startIdx)) { handleMessage(msg); lastMessageId = msg.id; }
+      } catch { setStatusPill('err', 'disconnected'); }
+    }
+
+    function handleMessage(msg) {
+      if (msg.topic === 'brainpet.state') {
+        try { const data = JSON.parse(msg.payload.content); applyState(data); } catch { /* */ }
+      } else if (msg.topic === 'brainpet.cemetery') {
+        try { cemetery = JSON.parse(msg.payload.content); renderCemetery(); } catch { /* */ }
+      } else if (msg.topic === 'chat.response' && (msg.metadata?.from_game === 'brainpet' || msg.from === nodeId)) {
+        addNarration(msg.payload?.content ?? '');
+        const a = msg.metadata?.animation;
+        if (typeof a === 'string') { currentAnim = a; els.animHint.textContent = a; animLockUntil = Date.now() + 4000; }
+      }
+    }
+
+    function applyState(data) {
+      pet = data.pet;
+      if (!pet) {
+        setStatusPill('warn', 'no pet — click 🥚 hatch');
+        els.name.textContent = '—'; els.age.textContent = '—'; els.stagePill.textContent = '—';
+        ['health','hunger','happiness','energy','cleanliness','bond'].forEach((k) => { els[k].style.width = '0%'; els['v' + capitalize(k)].textContent = '—'; });
+        els.personality.innerHTML = '';
+        return;
+      }
+      const stage = data.stage;
+      const age = data.age_minutes;
+      els.name.textContent = pet.name;
+      els.age.textContent = ageLabel(age);
+      els.stagePill.textContent = `${stage} · ${Math.round(age)} min`;
+      setStat('health', pet.health ?? 100);
+      setStat('hunger', pet.hunger); setStat('happiness', pet.happiness);
+      setStat('energy', pet.energy); setStat('cleanliness', pet.cleanliness);
+      setStat('bond', pet.bond, false);
+      renderPersonality(pet.personality);
+      maybeSpawnEmojis(pet.last_emojis);
+      if (Date.now() >= animLockUntil) {
+        currentAnim = pet.sleeping ? 'sleeping' : (pet.alive ? 'idle' : 'dead');
+        els.animHint.textContent = currentAnim;
+      }
+      if (!pet.alive) setStatusPill('err', 'rip');
+      else if ((pet.health ?? 100) <= 15) setStatusPill('err', 'CRITICAL — wounded');
+      else if (pet.hunger <= 0) setStatusPill('err', 'STARVING');
+      else if ((pet.health ?? 100) < 40 || pet.hunger < 25 || pet.happiness < 25 || pet.cleanliness < 25) setStatusPill('warn', 'needs care');
+      else setStatusPill('ok', `${pet.name} doing fine`);
+    }
+
+    function capitalize(s) { return s.slice(0, 1).toUpperCase() + s.slice(1); }
+    function ageLabel(m) {
+      if (m < 1) return `${Math.round(m * 60)}s`;
+      if (m < 60) return `${Math.round(m)}m`;
+      if (m < 60 * 24) return `${(m/60).toFixed(1)}h`;
+      return `${(m/60/24).toFixed(1)}d`;
+    }
+
+    function setStat(name, value, allowLow = true) {
+      const fill = els[name];
+      fill.style.width = Math.max(0, Math.min(100, value)) + '%';
+      fill.classList.toggle('low', allowLow && value < 25);
+      els['v' + capitalize(name)].textContent = Math.round(value);
+    }
+
+    function renderPersonality(p) {
+      els.personality.innerHTML = '';
+      const dims = [
+        { key: 'cheerful', label: 'cheerful' },
+        { key: 'clean', label: 'clean' },
+        { key: 'energetic', label: 'energetic' },
+        { key: 'social', label: 'social' },
+      ];
+      for (const d of dims) {
+        const v = p[d.key] ?? 50;
+        const strong = v > 60 || v < 40;
+        const span = document.createElement('span');
+        span.className = `trait${strong ? ' strong' : ''}`;
+        span.textContent = `${d.label} ${Math.round(v)}`;
+        els.personality.appendChild(span);
+      }
+    }
+
+    // ── Emoji overlay (LLM-driven flourishes) ──────────────────────────
+    // Each tool call may carry an `emojis` array. We dedup batches by
+    // their `ts` so a state replay (e.g. on poll-after-refresh) doesn't
+    // re-trigger old animations.
+    const emojiOverlayEl = document.getElementById('emoji-overlay');
+    let lastEmojiBatchTs = 0;
+
+    function maybeSpawnEmojis(batch) {
+      if (!Array.isArray(batch) || batch.length === 0) return;
+      // All items in a batch share the same ts (server-stamped); pick the max.
+      const ts = Math.max(...batch.map((e) => +e.ts || 0));
+      if (!ts || ts <= lastEmojiBatchTs) return;
+      lastEmojiBatchTs = ts;
+      // The state's "ts" is when the LLM call landed. If we're more than
+      // 30s late (UI just mounted), don't replay — graphical clutter.
+      if (Date.now() - ts > 30_000) return;
+      for (const e of batch) spawnEmoji(e);
+    }
+
+    function spawnEmoji(e) {
+      const count = Math.max(1, Math.min(10, e.count || 1));
+      const dur = Math.max(100, Math.min(5000, e.durationMs || 800));
+      const moving = typeof e.toX === 'number' && typeof e.toY === 'number';
+      for (let i = 0; i < count; i++) {
+        const stagger = i * 80;
+        // Per-copy jitter so multiples don't perfectly overlap.
+        const jx = count > 1 ? (Math.random() - 0.5) * 0.06 : 0;
+        const jy = count > 1 ? (Math.random() - 0.5) * 0.06 : 0;
+        setTimeout(() => renderEmojiNode(e, jx, jy, moving, dur), stagger);
+      }
+    }
+
+    function renderEmojiNode(e, jx, jy, moving, dur) {
+      const node = document.createElement('div');
+      node.className = 'em';
+      node.textContent = e.emoji || '✨';
+      // Position is set via left/top % so it scales with the stage.
+      const x0 = (e.fromX + jx) * 100;
+      const y0 = (e.fromY + jy) * 100;
+      const x1 = moving ? (e.toX + jx) * 100 : x0;
+      const y1 = moving ? (e.toY + jy) * 100 : y0;
+      node.style.left = x0 + '%';
+      node.style.top  = y0 + '%';
+      const sFrom = typeof e.scaleFrom === 'number' ? e.scaleFrom : 1;
+      const sTo   = typeof e.scaleTo === 'number' ? e.scaleTo : sFrom;
+      // Use the Web Animations API so we can mix translate + scale + fade
+      // in a single timeline without juggling CSS classes.
+      const keyframes = [
+        { transform: `translate(-50%, -50%) scale(${sFrom})`,
+          opacity: e.attached ? 1 : 0, offset: 0 },
+        { transform: `translate(-50%, -50%) scale(${(sFrom + sTo) / 2})`,
+          opacity: 1, offset: 0.15 },
+        { transform: `translate(-50%, -50%) scale(${sTo})`,
+          left: x1 + '%', top: y1 + '%',
+          opacity: e.attached ? 1 : 1, offset: 0.85 },
+        { transform: `translate(-50%, -50%) scale(${sTo})`,
+          left: x1 + '%', top: y1 + '%',
+          opacity: e.attached ? 1 : 0, offset: 1 },
+      ];
+      emojiOverlayEl.appendChild(node);
+      const anim = node.animate(keyframes, { duration: dur, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+      anim.onfinish = () => node.remove();
+      // Safety: clean up if onfinish doesn't fire (tab backgrounded).
+      setTimeout(() => node.remove(), dur + 500);
+    }
+
+    function addNarration(text) {
+      const empty = els.narration.querySelector('.empty');
+      empty?.remove();
+      const div = document.createElement('div');
+      div.className = 'line';
+      const html = escapeHtml(text).replace(/\*([^*]+)\*/g, '<strong>$1</strong>').replace(/_([^_]+)_/g, '<em>$1</em>');
+      div.innerHTML = html;
+      els.narration.appendChild(div);
+      els.narration.scrollTop = els.narration.scrollHeight;
+      while (els.narration.children.length > 80) els.narration.firstChild.remove();
+    }
+
+    function renderCemetery() {
+      els.cemeteryCount.textContent = String(cemetery.length);
+      if (cemetery.length === 0) {
+        els.cemetery.innerHTML = '<div class="empty hint">No graves yet.</div>'; return;
+      }
+      const c = document.createElement('div');
+      c.className = 'cemetery';
+      cemetery.forEach((g, idx) => {
+        const row = document.createElement('div');
+        row.className = 'grave';
+        row.title = `Click to see ${g.name}'s memorial`;
+        row.dataset.idx = String(idx);
+        const lived = ageLabel(g.age_minutes);
+        row.innerHTML = `
+          <div class="name">⚰️ ${escapeHtml(g.name)} <span class="cause">— ${escapeHtml(g.cause)}</span></div>
+          <div class="meta">${escapeHtml(g.species)} · lived ${lived} · died ${new Date(g.died_at).toLocaleString()}</div>
+          <div class="epitaph">"${escapeHtml(g.epitaph)}"</div>
+        `;
+        row.addEventListener('click', () => openGraveModal(g));
+        c.prepend(row); // newest first
+      });
+      els.cemetery.replaceChildren(c);
+    }
+
+    // ── Grave modal ─────────────────────────────────────────────────────
+    const modalBackdrop = document.getElementById('modal-backdrop');
+    document.getElementById('modal-close').addEventListener('click', () => modalBackdrop.classList.remove('open'));
+    modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) modalBackdrop.classList.remove('open'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modalBackdrop.classList.remove('open'); });
+
+    function openGraveModal(g) {
+      document.getElementById('modal-name').textContent = `⚰️ ${g.name}`;
+      const lived = ageLabel(g.age_minutes);
+      document.getElementById('modal-meta').innerHTML = `${escapeHtml(g.species)} · lived ${lived} · died ${new Date(g.died_at).toLocaleString()}`;
+      document.getElementById('modal-cause').textContent = g.cause;
+      document.getElementById('modal-epitaph').textContent = g.epitaph;
+
+      // Stats bars (read-only)
+      const statsEl = document.getElementById('modal-stats');
+      const stats = [
+        { key: 'health',      icon: '❤️',  cls: 'health' },
+        { key: 'hunger',      icon: '🍴', cls: 'hunger' },
+        { key: 'happiness',   icon: '😊', cls: 'happiness' },
+        { key: 'energy',      icon: '⚡', cls: 'energy' },
+        { key: 'cleanliness', icon: '🛁', cls: 'cleanliness' },
+        { key: 'bond',        icon: '💞', cls: 'bond' },
+      ];
+      statsEl.innerHTML = '';
+      for (const s of stats) {
+        const v = g.final_stats?.[s.key] ?? 0;
+        const row = document.createElement('div');
+        row.className = 'stat';
+        row.innerHTML = `
+          <span class="icon">${s.icon}</span>
+          <div class="bar"><div class="fill ${s.cls}${v < 25 && s.key !== 'bond' ? ' low' : ''}" style="width:${Math.max(0, Math.min(100, v))}%"></div></div>
+          <span class="v">${Math.round(v)}</span>
+        `;
+        statsEl.appendChild(row);
+      }
+
+      // Personality pills
+      const persEl = document.getElementById('modal-personality');
+      persEl.innerHTML = '';
+      const p = g.personality ?? {};
+      for (const k of ['cheerful', 'clean', 'energetic', 'social']) {
+        const v = p[k] ?? 50;
+        const strong = v > 60 || v < 40;
+        const span = document.createElement('span');
+        span.className = `trait${strong ? ' strong' : ''}`;
+        span.textContent = `${k} ${Math.round(v)}`;
+        persEl.appendChild(span);
+      }
+
+      // Last words (history)
+      const histEl = document.getElementById('modal-history');
+      const histSection = document.getElementById('modal-history-section');
+      if (Array.isArray(g.history) && g.history.length > 0) {
+        histSection.style.display = '';
+        histEl.innerHTML = '';
+        for (const turn of g.history) {
+          const div = document.createElement('div');
+          div.className = `turn ${turn.role}`;
+          const who = turn.role === 'user' ? (turn.speaker || 'someone') : g.name;
+          div.innerHTML = `<div class="who">${escapeHtml(who)}</div>${escapeHtml(turn.content)}`;
+          histEl.appendChild(div);
+        }
+      } else {
+        histSection.style.display = 'none';
+      }
+
+      // Render the dead creature on the modal canvas using the SAME procedural
+      // traits the live pet would have had (deterministic from born_at).
+      const canvas = document.getElementById('modal-canvas');
+      const c2 = canvas.getContext('2d');
+      // Reuse the procedural drawing pipeline by faking a `pet` for one frame.
+      const fakePet = {
+        name: g.name, species: g.species, born_at: g.born_at, alive: false,
+        sleeping: false, hunger: 0, happiness: 0, energy: 0, cleanliness: 0,
+        bond: g.final_stats?.bond ?? 0, personality: g.personality ?? {},
+      };
+      drawSnapshot(c2, canvas.width, canvas.height, fakePet, /* dead */ true);
+
+      // Finally — actually show the modal. (CSS hides .modal-backdrop
+      // until `.open` is on it.)
+      modalBackdrop.classList.add('open');
+    }
+
+    /** One-shot pose render. Reuses petTraits + the body/face/etc helpers
+     *  but doesn't animate — graves are static memorials. */
+    function drawSnapshot(c2, w, h, fakePet, dead) {
+      c2.clearRect(0, 0, w, h);
+      const traits = petTraits(fakePet.born_at);
+      const palette = dead
+        ? { body: '#475569', accent: '#1e293b', highlight: '#94a3b8', eye: '#0f172a', cheer: 0.4 }
+        : stagePalette('adult', fakePet.personality, true);
+      // Temporarily route the canvas helpers to c2.
+      const prevCtx = ctx;
+      // eslint-disable-next-line no-undef
+      ctxRedirect(c2);
+      c2.save();
+      c2.translate(w / 2, h / 2 + 6);
+      if (dead) c2.rotate(Math.PI * 0.5);
+      const size = Math.min(w, h) * 0.42;
+      drawTail(size, palette, traits, 0);
+      drawEars(size, palette, traits);
+      drawBody(size, palette, traits);
+      drawBodyDetails(size, palette, traits);
+      drawFace(size, palette, traits, dead ? 'dead' : 'neutral', dead, 0);
+      c2.restore();
+      ctxRedirect(prevCtx);
+    }
+    // Helper to point the module-level `ctx` reference at a different
+    // canvas while we use the existing draw helpers. They all reference
+    // the top-level `ctx` (the main canvas's 2D context) — we re-bind
+    // it briefly, then restore.
+    let _activeCtx;
+    function ctxRedirect(target) {
+      _activeCtx = target;
+      // eslint-disable-next-line no-global-assign
+      ctx = target;
+    }
+
+    // ── Send helpers ────────────────────────────────────────────────────
+    async function sendCommand(action, extra = {}) {
+      try {
+        await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: 'brainpet.command',
+            content: JSON.stringify({ action, ...extra }),
+            from: 'system.brainpet-ui',
+            criticality: 4,
+            metadata: { action, ...extra },
+          }),
+        });
+      } catch (e) { addNarration(`UI error: ${e.message}`); }
+    }
+
+    document.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        if (action === 'kill' && !confirm('Really kill your pet? It goes to the cemetery.')) return;
+        sendCommand(action);
+      });
+    });
+    els.btnRename.addEventListener('click', () => {
+      const name = els.rename.value.trim(); if (!name) return;
+      sendCommand('rename', { name }); els.rename.value = '';
+    });
+    els.btnTalk.addEventListener('click', () => {
+      const text = els.talk.value.trim(); if (!text) return;
+      sendCommand('talk', { text });
+      addNarration(`*you*: ${text}`);
+      els.talk.value = '';
+    });
+    els.talk.addEventListener('keydown', (e) => { if (e.key === 'Enter') els.btnTalk.click(); });
+    els.rename.addEventListener('keydown', (e) => { if (e.key === 'Enter') els.btnRename.click(); });
+
+    pollMessages();
+    setInterval(pollMessages, 1500);
+    setTimeout(() => sendCommand('status'), 300);
+
+    // ── Procedural creature renderer ────────────────────────────────────
+    //
+    // Each pet's visual identity (body shape, eyes, mouth, palette,
+    // freckles / antennae / horns / spots / stripes) is fully derived from
+    // its born_at timestamp via a seeded PRNG — so the same pet looks the
+    // same across reloads, but every new pet is uniquely weird-looking.
+    // Mood layers (eyebrows, tears, sparkles, X-eyes…) sit on top.
+    // `let` instead of `const` because the grave-modal snapshot renderer
+    // briefly re-points it at a second canvas, then restores it.
+    let ctx = els.canvas.getContext('2d');
+    let t0 = performance.now();
+    let blink = { open: 1, nextChangeAt: 0 };
+    let cachedTraits = null;     // { seed, traits } — recompute when born_at changes
+
+    function mulberry32(seed) {
+      return function() {
+        seed = (seed + 0x6D2B79F5) | 0;
+        let t = seed;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function pick(rng, ...opts) { return opts[Math.floor(rng() * opts.length)]; }
+
+    function petTraits(born_at) {
+      if (cachedTraits && cachedTraits.seed === born_at) return cachedTraits.traits;
+      const rng = mulberry32(born_at | 0);
+      const t = {
+        bodyShape: pick(rng, 'round', 'tall', 'wide', 'peanut', 'pear', 'blob'),
+        bodySquish: 0.85 + rng() * 0.35,
+        bodyHue: Math.floor(rng() * 360),
+        accentShift: 25 + rng() * 30,
+        outlineDark: 0.35 + rng() * 0.15,   // 0..1 — darker = inkier outline
+        eyeShape: pick(rng, 'round', 'oval', 'almond', 'beady', 'wide', 'sparkle', 'star'),
+        eyeColor: pick(rng, '#1e293b', '#0f172a', '#172554', '#451a03', '#064e3b'),
+        eyeSep: 0.26 + rng() * 0.14,        // fraction of body size
+        eyeHeight: -0.22 + rng() * 0.16,    // vertical offset (negative = upper face)
+        eyeSize: 0.085 + rng() * 0.055,
+        eyebrows: pick(rng, 'none', 'thin', 'thick', 'tufted'),
+        mouthStyle: pick(rng, 'simple', 'wide', 'small', 'beak', 'pout', 'fang'),
+        ears: pick(rng, 'none', 'ears_pointy', 'ears_floppy', 'ears_round', 'antennae'),
+        horns: rng() < 0.2,
+        spots: rng() < 0.45 ? 3 + Math.floor(rng() * 6) : 0,
+        spotSize: 0.07 + rng() * 0.06,
+        stripes: rng() < 0.15,
+        freckles: rng() < 0.4,
+        cheekHue: Math.floor(rng() * 360),
+        tail: pick(rng, 'none', 'curl', 'fluffy', 'spike'),
+        spotsLayout: [],
+      };
+      // Pre-roll spot positions so they stay put each frame.
+      for (let i = 0; i < t.spots; i++) {
+        t.spotsLayout.push({ x: (rng() - 0.5) * 1.5, y: (rng() - 0.5) * 1.5, r: 0.6 + rng() * 0.8 });
+      }
+      cachedTraits = { seed: born_at, traits: t };
+      return t;
+    }
+
+    function draw(now) {
+      const w = els.canvas.width, h = els.canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const t = (now - t0) / 1000;
+
+      if (!pet) { drawEgg(w, h, t, '#cbd5e1'); requestAnimationFrame(draw); return; }
+      const stage = stageFromAge((Date.now() - pet.born_at) / 60000);
+      const palette = stagePalette(stage, pet.personality, pet.alive);
+      const traits = petTraits(pet.born_at);
+      const m = expressionMood(pet);
+
+      // Animation envelope: amplitude & vertical offset.
+      let bob = Math.sin(t * 2) * 6;
+      let scaleX = 1, scaleY = 1, rot = 0, dx = 0, dy = 0;
+      const a = currentAnim;
+      if (!pet.alive || a === 'dead') { rot = Math.PI * 0.5; scaleY = 0.9; bob = 0; }
+      else if (a === 'sleeping' || pet.sleeping) { bob = Math.sin(t * 0.8) * 3; }
+      else if (a === 'eating') { scaleY = 1 + Math.sin(t * 10) * 0.04; scaleX = 1 - Math.sin(t * 10) * 0.04; }
+      else if (a === 'playing') { rot = Math.sin(t * 6) * 0.2; bob = Math.abs(Math.sin(t * 6)) * -18; }
+      else if (a === 'dancing') { rot = Math.sin(t * 8) * 0.3; bob = Math.abs(Math.sin(t * 8)) * -10; }
+      else if (a === 'cuddling') { scaleX = 1 + Math.sin(t * 3) * 0.06; scaleY = 1 - Math.sin(t * 3) * 0.06; }
+      else if (a === 'washing') { dx = Math.sin(t * 12) * 6; }
+      else if (m === 'sad' || m === 'angry') { rot = -0.1; }
+      else if (a === 'dying') { rot = Math.sin(t * 1.2) * 0.18; scaleY = 0.95 + Math.sin(t * 1.2) * 0.04; }
+
+      ctx.save();
+      ctx.translate(w / 2 + dx, h / 2 + bob + dy);
+      ctx.rotate(rot);
+      ctx.scale(scaleX, scaleY);
+
+      const size = stageSize(stage, w);
+      drawTail(size, palette, traits, t);
+      drawEars(size, palette, traits);
+      drawBody(size, palette, traits);
+      drawBodyDetails(size, palette, traits);
+      drawFace(size, palette, traits, m, !pet.alive, t);
+      ctx.restore();
+
+      // Ambient particle effects
+      if (!pet.alive) { /* nothing — death is quiet */ }
+      else if (a === 'sleeping' || pet.sleeping) drawZzz(w, h, t);
+      else if (a === 'washing') drawBubbles(w, h, t);
+      else if (a === 'eating') drawCrumbs(w, h, t);
+      else if (a === 'playing') drawSparkles(w, h, t);
+      else if (a === 'cuddling') drawHearts(w, h, t);
+      else if (m === 'ecstatic') drawHearts(w, h, t * 0.6);
+
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+
+    /** Richer mood inference than the simple one above — drives facial
+     *  expression details (eyebrows / tears / cheeks / fangs). */
+    function expressionMood(pet) {
+      if (!pet || !pet.alive) return 'dead';
+      if (pet.sleeping) return 'sleepy';
+      if (currentAnim === 'dying' || pet.hunger <= 0) return 'dying';
+      if (currentAnim === 'sad' || pet.happiness < 15) return 'angry';
+      if (pet.hunger < 20) return 'hungry';
+      if (pet.cleanliness < 20) return 'icky';
+      if (pet.energy < 20) return 'tired';
+      if (currentAnim === 'cuddling' || (pet.happiness > 85 && pet.bond > 30)) return 'ecstatic';
+      if (pet.happiness > 75) return 'happy';
+      if (pet.happiness < 35) return 'sad';
+      if (currentAnim === 'playing' || currentAnim === 'dancing') return 'excited';
+      return 'neutral';
+    }
+
+    function stageFromAge(m) {
+      if (m < 5) return 'egg';
+      if (m < 30) return 'baby';
+      if (m < 120) return 'child';
+      if (m < 720) return 'teen';
+      if (m < 7200) return 'adult';
+      return 'senior';
+    }
+    function stageSize(stage, w) {
+      const base = w * 0.42;
+      if (stage === 'egg') return base * 0.55;
+      if (stage === 'baby') return base * 0.65;
+      if (stage === 'child') return base * 0.78;
+      if (stage === 'teen') return base * 0.9;
+      if (stage === 'senior') return base * 0.9;
+      return base; // adult
+    }
+    function stagePalette(stage, p, alive) {
+      if (!alive) return { body: '#475569', accent: '#1e293b', highlight: '#94a3b8', eye: '#0f172a' };
+      // Hue rotates with the pet's own hue trait so every pet has a
+      // distinct color; lightness shifts with stage (eggs bright, seniors
+      // muted) and saturation rises with cheerful personality.
+      const traits = pet ? petTraits(pet.born_at) : null;
+      const hue = traits ? traits.bodyHue : 50;
+      const accentHue = (hue + (traits ? traits.accentShift : 30)) % 360;
+      const cheer = (p?.cheerful ?? 50) / 100;
+      const sat = 50 + cheer * 25;
+      const stageLight = { egg: 78, baby: 80, child: 72, teen: 68, adult: 60, senior: 55 }[stage] ?? 70;
+      const stageAccentLight = stageLight - 18;
+      return {
+        body: `hsl(${hue}, ${sat}%, ${stageLight}%)`,
+        accent: `hsl(${accentHue}, ${sat + 10}%, ${stageAccentLight}%)`,
+        highlight: '#ffffff',
+        eye: traits ? traits.eyeColor : '#1e293b',
+        cheer,
+      };
+    }
+
+    function drawBody(size, palette, traits) {
+      ctx.fillStyle = palette.body;
+      ctx.strokeStyle = palette.accent;
+      ctx.lineWidth = size * 0.045;
+      let w = size, h = size * 1.05;
+      // Body shape variants — pure procedural geometry.
+      ctx.beginPath();
+      const sq = traits.bodySquish;
+      switch (traits.bodyShape) {
+        case 'tall': w = size * 0.85; h = size * 1.25 * sq; ellipseBody(w, h); break;
+        case 'wide': w = size * 1.2; h = size * 0.85; ellipseBody(w, h); break;
+        case 'pear':
+          // Wider at the bottom.
+          ctx.moveTo(0, -h); ctx.bezierCurveTo(w * 0.7, -h, w * 1.2, h * 0.4, w * 0.85, h);
+          ctx.bezierCurveTo(0, h * 1.15, 0, h * 1.15, -w * 0.85, h);
+          ctx.bezierCurveTo(-w * 1.2, h * 0.4, -w * 0.7, -h, 0, -h);
+          break;
+        case 'peanut':
+          // Pinched waist.
+          ctx.moveTo(0, -h * 1.1);
+          ctx.bezierCurveTo(w * 1.25, -h * 1.1, w * 0.55, 0, w * 1.0, h * 0.4);
+          ctx.bezierCurveTo(w * 1.25, h * 1.1, -w * 1.25, h * 1.1, -w * 1.0, h * 0.4);
+          ctx.bezierCurveTo(-w * 0.55, 0, -w * 1.25, -h * 1.1, 0, -h * 1.1);
+          break;
+        case 'blob':
+          // Lumpy.
+          ctx.moveTo(0, -h);
+          ctx.bezierCurveTo(w * 1.3, -h * 0.9, w * 1.05, h * 0.3, w * 0.7, h);
+          ctx.bezierCurveTo(w * 0.3, h * 1.05, -w * 0.4, h * 1.05, -w * 0.8, h);
+          ctx.bezierCurveTo(-w * 1.15, h * 0.5, -w * 1.3, -h * 0.85, 0, -h);
+          break;
+        case 'round':
+        default:
+          ellipseBody(w, h * sq);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Soft highlight (specular).
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      ctx.beginPath();
+      ctx.ellipse(-size * 0.32, -size * 0.5, size * 0.24, size * 0.16, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    function ellipseBody(w, h) {
+      ctx.moveTo(0, -h);
+      ctx.bezierCurveTo(w * 1.05, -h, w * 1.05, h, 0, h);
+      ctx.bezierCurveTo(-w * 1.05, h, -w * 1.05, -h, 0, -h);
+    }
+
+    function drawBodyDetails(size, palette, traits) {
+      // Spots — pre-rolled positions in petTraits, drawn in accent color.
+      if (traits.spots > 0) {
+        ctx.fillStyle = palette.accent;
+        for (const s of traits.spotsLayout) {
+          ctx.beginPath();
+          ctx.ellipse(s.x * size * 0.5, s.y * size * 0.5, size * traits.spotSize * s.r, size * traits.spotSize * s.r * 0.85, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // Vertical stripes (rare).
+      if (traits.stripes) {
+        ctx.save();
+        ctx.fillStyle = palette.accent;
+        ctx.globalAlpha = 0.55;
+        for (let i = -2; i <= 2; i++) {
+          ctx.beginPath();
+          ctx.ellipse(i * size * 0.3, 0, size * 0.05, size * 0.85, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      // Horns (deterministic) — two small dark triangles up top.
+      if (traits.horns) {
+        ctx.fillStyle = palette.accent;
+        const hx = size * 0.32, hy = -size * 0.9;
+        triangleAt(-hx, hy, size * 0.1, size * 0.22);
+        triangleAt(+hx, hy, size * 0.1, size * 0.22);
+      }
+    }
+    function triangleAt(cx, cy, w, h) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - h);
+      ctx.lineTo(cx - w / 2, cy);
+      ctx.lineTo(cx + w / 2, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawEars(size, palette, traits) {
+      ctx.fillStyle = palette.body;
+      ctx.strokeStyle = palette.accent;
+      ctx.lineWidth = size * 0.03;
+      const ey = -size * 0.85;
+      if (traits.ears === 'ears_pointy') {
+        triangleAt(-size * 0.55, ey, size * 0.22, size * 0.35);
+        triangleAt(+size * 0.55, ey, size * 0.22, size * 0.35);
+      } else if (traits.ears === 'ears_round') {
+        ctx.beginPath();
+        ctx.arc(-size * 0.6, ey, size * 0.18, 0, Math.PI * 2);
+        ctx.arc(+size * 0.6, ey, size * 0.18, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+      } else if (traits.ears === 'ears_floppy') {
+        // Squashed downward droplets.
+        for (const side of [-1, 1]) {
+          ctx.beginPath();
+          ctx.ellipse(side * size * 0.55, ey + size * 0.15, size * 0.12, size * 0.3, side * 0.3, 0, Math.PI * 2);
+          ctx.fill(); ctx.stroke();
+        }
+      } else if (traits.ears === 'antennae') {
+        ctx.strokeStyle = palette.accent;
+        ctx.lineWidth = size * 0.035;
+        ctx.beginPath();
+        ctx.moveTo(-size * 0.2, -size * 0.95);
+        ctx.bezierCurveTo(-size * 0.4, -size * 1.3, -size * 0.45, -size * 1.4, -size * 0.5, -size * 1.45);
+        ctx.moveTo(+size * 0.2, -size * 0.95);
+        ctx.bezierCurveTo(+size * 0.4, -size * 1.3, +size * 0.45, -size * 1.4, +size * 0.5, -size * 1.45);
+        ctx.stroke();
+        ctx.fillStyle = palette.accent;
+        ctx.beginPath(); ctx.arc(-size * 0.5, -size * 1.45, size * 0.06, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(+size * 0.5, -size * 1.45, size * 0.06, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    function drawTail(size, palette, traits, t) {
+      if (traits.tail === 'none') return;
+      ctx.fillStyle = palette.body;
+      ctx.strokeStyle = palette.accent;
+      ctx.lineWidth = size * 0.03;
+      const wiggle = Math.sin(t * 4) * 0.1;
+      ctx.save();
+      ctx.translate(size * 0.9, size * 0.3);
+      ctx.rotate(0.3 + wiggle);
+      if (traits.tail === 'curl') {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(size * 0.3, -size * 0.1, size * 0.4, size * 0.25, size * 0.15, size * 0.35);
+        ctx.bezierCurveTo(size * 0.0, size * 0.4, size * 0.05, size * 0.25, size * 0.18, size * 0.2);
+        ctx.lineWidth = size * 0.08;
+        ctx.stroke();
+      } else if (traits.tail === 'fluffy') {
+        ctx.beginPath(); ctx.arc(size * 0.25, 0, size * 0.16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      } else if (traits.tail === 'spike') {
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(size * 0.4, -size * 0.08); ctx.lineTo(size * 0.05, size * 0.05);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    function mood(pet) {
+      if (!pet || !pet.alive) return 'dead';
+      if (pet.sleeping) return 'sleepy';
+      if (pet.hunger < 15) return 'hungry';
+      if (pet.happiness < 20) return 'sad';
+      if (pet.cleanliness < 20) return 'icky';
+      if (pet.happiness > 75) return 'happy';
+      return 'neutral';
+    }
+
+    function drawEgg(w, h, t, color) {
+      ctx.save();
+      ctx.translate(w / 2, h / 2 + Math.sin(t * 1.6) * 6);
+      ctx.fillStyle = color; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 5;
+      const eW = w * 0.18, eH = w * 0.24;
+      ctx.beginPath();
+      ctx.moveTo(0, -eH);
+      ctx.bezierCurveTo(eW * 1.2, -eH, eW * 1.05, eH, 0, eH);
+      ctx.bezierCurveTo(-eW * 1.05, eH, -eW * 1.2, -eH, 0, -eH);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    /** Mood-driven face renderer. Reads pet traits for eye shape/position
+     *  and mood for expression overlays (eyebrows, tears, cheeks, fangs).
+     *  Dead → fixed X eyes, no blink, straight mouth. */
+    function drawFace(size, palette, traits, m, dead, t) {
+      const eyeY = -size * (0.18 + traits.eyeHeight * 0.4);
+      const eyeDx = size * traits.eyeSep * 1.6;
+      const eyeR = size * traits.eyeSize;
+      const mouthY = size * 0.22;
+
+      // Blink scheduling — but dead pets keep their X eyes locked open.
+      if (!dead) {
+        if (t > blink.nextChangeAt) {
+          blink.open = blink.open > 0.5 ? 0 : 1;
+          blink.nextChangeAt = t + (blink.open ? 2.5 + Math.random() * 2 : 0.12);
+        }
+      }
+      const sleeping = m === 'sleepy';
+      const openY = dead ? 0.9 : (sleeping ? 0 : (blink.open ? 1 : 0.1));
+
+      // Cheeks (drawn BEHIND eyes for depth) — happy/ecstatic/cuddling/sad get them.
+      if (m === 'happy' || m === 'ecstatic' || currentAnim === 'cuddling' || m === 'sad') {
+        const cheekHue = traits.cheekHue;
+        ctx.fillStyle = `hsla(${cheekHue}, 70%, 70%, 0.45)`;
+        ctx.beginPath(); ctx.arc(-size * 0.55, size * 0.05, size * 0.12, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(size * 0.55, size * 0.05, size * 0.12, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Freckles
+      if (traits.freckles && !dead) {
+        ctx.fillStyle = palette.accent;
+        for (let i = -2; i <= 2; i++) {
+          ctx.beginPath();
+          ctx.arc(i * size * 0.13, mouthY * 0.1, size * 0.012, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // ── Eyes ─────────────────────────────────────────────────────────
+      if (dead) {
+        // X eyes, fixed, no blinking
+        ctx.strokeStyle = palette.eye;
+        ctx.lineWidth = size * 0.045;
+        ctx.lineCap = 'round';
+        crossAt(-eyeDx, eyeY, eyeR * 1.1);
+        crossAt(eyeDx, eyeY, eyeR * 1.1);
+      } else {
+        ctx.fillStyle = palette.eye;
+        drawEye(-eyeDx, eyeY, eyeR, openY, traits.eyeShape, m);
+        drawEye(eyeDx, eyeY, eyeR, openY, traits.eyeShape, m);
+      }
+
+      // ── Eyebrows (mood-driven) ──────────────────────────────────────
+      if (!dead && traits.eyebrows !== 'none' && (m === 'angry' || m === 'sad' || m === 'happy' || m === 'hungry' || m === 'tired')) {
+        ctx.strokeStyle = palette.eye;
+        ctx.lineWidth = size * (traits.eyebrows === 'thick' ? 0.05 : 0.03);
+        ctx.lineCap = 'round';
+        const browY = eyeY - eyeR * 1.7;
+        const browLen = eyeR * 1.6;
+        let lInner = 0, lOuter = 0; // angle deltas at inner / outer endpoints
+        if (m === 'angry')      { lInner = -0.5; lOuter = 0.2; }
+        else if (m === 'sad' || m === 'hungry') { lInner = 0.4; lOuter = -0.2; }
+        else if (m === 'happy') { lInner = 0.1; lOuter = -0.25; }
+        else if (m === 'tired') { lInner = -0.05; lOuter = 0.4; }
+        for (const side of [-1, 1]) {
+          const cx = side * eyeDx;
+          const innerX = cx - side * browLen * 0.45;
+          const outerX = cx + side * browLen * 0.45;
+          ctx.beginPath();
+          ctx.moveTo(innerX, browY - side * lInner * eyeR);
+          ctx.lineTo(outerX, browY - side * lOuter * eyeR);
+          ctx.stroke();
+          if (traits.eyebrows === 'tufted') {
+            // tiny dot at outer end
+            ctx.fillStyle = palette.eye;
+            ctx.beginPath();
+            ctx.arc(outerX, browY - side * lOuter * eyeR, size * 0.018, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // ── Tears (sad / hungry / dying) ────────────────────────────────
+      if (!dead && (m === 'sad' || m === 'hungry' || m === 'dying')) {
+        ctx.fillStyle = '#60a5fa';
+        for (const side of [-1, 1]) {
+          const tx = side * eyeDx + side * eyeR * 0.6;
+          const ty = eyeY + eyeR * (1.1 + (Math.sin(t * 2 + side) + 1) * 0.4);
+          ctx.beginPath();
+          ctx.ellipse(tx, ty, size * 0.025, size * 0.04, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // ── Mouth ────────────────────────────────────────────────────────
+      ctx.lineWidth = size * 0.045;
+      ctx.strokeStyle = palette.eye;
+      ctx.lineCap = 'round';
+      const mw = size * 0.36 * (traits.mouthStyle === 'wide' ? 1.25 : traits.mouthStyle === 'small' ? 0.7 : 1);
+
+      ctx.beginPath();
+      if (dead) {
+        ctx.moveTo(-mw * 0.35, mouthY); ctx.lineTo(mw * 0.35, mouthY);
+      } else if (m === 'happy' || m === 'ecstatic') {
+        // Big open smile, with tongue if ecstatic
+        ctx.arc(0, mouthY - size * 0.04, mw * 0.5, 0.15, Math.PI - 0.15);
+        ctx.stroke();
+        if (m === 'ecstatic') {
+          ctx.fillStyle = '#ec4899';
+          ctx.beginPath();
+          ctx.ellipse(0, mouthY + size * 0.06, mw * 0.18, size * 0.04, 0, 0, Math.PI);
+          ctx.fill();
+        }
+      } else if (m === 'angry') {
+        // Clenched: zigzag teeth
+        const teeth = 6;
+        for (let i = 0; i <= teeth; i++) {
+          const x = -mw * 0.4 + (i / teeth) * mw * 0.8;
+          const y = mouthY + (i % 2 === 0 ? 0 : -size * 0.05);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      } else if (m === 'sad' || m === 'hungry' || m === 'dying' || m === 'tired') {
+        ctx.arc(0, mouthY + size * 0.18, mw * 0.5, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+      } else if (m === 'sleepy') {
+        ctx.moveTo(-mw * 0.3, mouthY);
+        ctx.bezierCurveTo(-mw * 0.1, mouthY + size * 0.05, mw * 0.1, mouthY + size * 0.05, mw * 0.3, mouthY);
+        ctx.stroke();
+      } else if (m === 'icky') {
+        for (let i = -1; i <= 1; i += 0.1) {
+          const x = i * mw * 0.4;
+          const y = mouthY + Math.sin(i * 8) * size * 0.04;
+          if (i === -1) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      } else if (m === 'excited') {
+        // Open small O
+        ctx.fillStyle = palette.eye;
+        ctx.beginPath();
+        ctx.ellipse(0, mouthY, mw * 0.18, size * 0.06, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // neutral — small horizontal line, slight curve up for 'beak' / 'pout' styles
+        if (traits.mouthStyle === 'pout') {
+          ctx.arc(0, mouthY - size * 0.02, mw * 0.25, 0.4, Math.PI - 0.4);
+        } else if (traits.mouthStyle === 'beak') {
+          ctx.fillStyle = palette.accent;
+          ctx.beginPath();
+          ctx.moveTo(-mw * 0.18, mouthY - size * 0.04);
+          ctx.lineTo(0, mouthY + size * 0.1);
+          ctx.lineTo(mw * 0.18, mouthY - size * 0.04);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          ctx.moveTo(-mw * 0.3, mouthY); ctx.lineTo(mw * 0.3, mouthY);
+          ctx.stroke();
+        }
+      }
+
+      // Fangs for fang-mouthed pets (regardless of mood) when awake
+      if (!dead && traits.mouthStyle === 'fang' && m !== 'sleepy') {
+        ctx.fillStyle = '#fafafa';
+        for (const side of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(side * mw * 0.18, mouthY - size * 0.01);
+          ctx.lineTo(side * mw * 0.24, mouthY + size * 0.08);
+          ctx.lineTo(side * mw * 0.12, mouthY - size * 0.01);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+
+    function crossAt(x, y, r) {
+      ctx.beginPath();
+      ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r);
+      ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r);
+      ctx.stroke();
+    }
+
+    function drawEye(x, y, r, open, shape, m) {
+      if (open < 0.2 || m === 'sleepy') {
+        // closed — single arc line, with lashes if eyeShape is 'almond'
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = r * 0.28;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.9, Math.PI + 0.2, -0.2);
+        ctx.stroke();
+        return;
+      }
+      ctx.save();
+      const oldFill = ctx.fillStyle;
+      // Sclera (white) for round / wide / star shapes
+      if (shape === 'wide' || shape === 'sparkle' || shape === 'star' || shape === 'round') {
+        ctx.fillStyle = '#fafafa';
+        ctx.beginPath();
+        if (shape === 'wide') ctx.ellipse(x, y, r * 0.85, r * 0.75, 0, 0, Math.PI * 2);
+        else ctx.ellipse(x, y, r * 0.7, r * (0.65 + 0.4 * open), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Pupil / iris
+      ctx.fillStyle = oldFill;
+      ctx.beginPath();
+      if (shape === 'beady') {
+        ctx.ellipse(x, y, r * 0.35, r * 0.35, 0, 0, Math.PI * 2);
+      } else if (shape === 'almond') {
+        ctx.ellipse(x, y, r * 0.6, r * 0.4, 0, 0, Math.PI * 2);
+      } else if (shape === 'oval') {
+        ctx.ellipse(x, y, r * 0.45, r * 0.6 * open, 0, 0, Math.PI * 2);
+      } else if (shape === 'wide') {
+        ctx.ellipse(x, y, r * 0.4, r * 0.5, 0, 0, Math.PI * 2);
+      } else if (shape === 'sparkle') {
+        ctx.ellipse(x, y, r * 0.5, r * (0.55 + 0.35 * open), 0, 0, Math.PI * 2);
+      } else if (shape === 'star') {
+        // 5-point star pupil — bigger expression
+        drawStar(x, y, r * 0.55, r * 0.22, 5);
+      } else {
+        // round (default)
+        ctx.ellipse(x, y, r * 0.55, r * (0.6 + 0.4 * open), 0, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      // Sparkle highlight
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x - r * 0.18, y - r * 0.22, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      // Heart eyes when ecstatic
+      if (m === 'ecstatic') {
+        ctx.fillStyle = '#ec4899';
+        drawHeart(x, y, r * 0.7);
+      }
+      ctx.restore();
+    }
+
+    function drawStar(cx, cy, rOuter, rInner, points) {
+      const step = Math.PI / points;
+      ctx.beginPath();
+      for (let i = 0; i < points * 2; i++) {
+        const r = i % 2 === 0 ? rOuter : rInner;
+        const a = -Math.PI / 2 + i * step;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+    function drawHeart(cx, cy, s) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + s * 0.4);
+      ctx.bezierCurveTo(cx - s * 1.4, cy - s * 0.4, cx - s * 0.5, cy - s * 1.0, cx, cy - s * 0.2);
+      ctx.bezierCurveTo(cx + s * 0.5, cy - s * 1.0, cx + s * 1.4, cy - s * 0.4, cx, cy + s * 0.4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawZzz(w, h, t) {
+      ctx.fillStyle = '#94a3b8'; ctx.font = `${w * 0.05}px ui-monospace, monospace`;
+      for (let i = 0; i < 3; i++) {
+        const phase = ((t * 0.6 + i * 0.7) % 3) / 3;
+        ctx.globalAlpha = 1 - phase;
+        ctx.fillText('Z', w * 0.62 + i * w * 0.04, h * 0.42 - phase * h * 0.2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    function drawBubbles(w, h, t) {
+      ctx.fillStyle = 'rgba(186,230,253,0.7)';
+      for (let i = 0; i < 8; i++) {
+        const phase = ((t * 0.5 + i * 0.13) % 1);
+        ctx.beginPath();
+        ctx.arc(w * 0.5 + Math.sin(i + t) * w * 0.25, h - phase * h, 8 + i, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    function drawCrumbs(w, h, t) {
+      ctx.fillStyle = '#facc15';
+      for (let i = 0; i < 6; i++) {
+        const phase = ((t * 0.7 + i * 0.15) % 1);
+        const x = w * 0.5 + (i - 3) * 12;
+        const y = h * 0.6 + phase * h * 0.2;
+        ctx.fillRect(x, y, 4, 4);
+      }
+    }
+    function drawSparkles(w, h, t) {
+      ctx.strokeStyle = '#f472b6'; ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const phase = (t * 0.8 + i * 0.2) % 1;
+        const a = i * 0.78;
+        const x = w * 0.5 + Math.cos(a + t) * w * 0.32 * phase;
+        const y = h * 0.5 + Math.sin(a + t) * h * 0.32 * phase;
+        ctx.globalAlpha = 1 - phase;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
+        ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    function drawHearts(w, h, t) {
+      ctx.fillStyle = '#f472b6';
+      for (let i = 0; i < 5; i++) {
+        const phase = ((t * 0.5 + i * 0.2) % 1);
+        const x = w * 0.5 + (i - 2) * 30;
+        const y = h * 0.5 - phase * h * 0.4;
+        ctx.globalAlpha = 1 - phase;
+        ctx.beginPath();
+        const s = 8;
+        ctx.moveTo(x, y + s);
+        ctx.bezierCurveTo(x - s * 1.5, y - s * 0.2, x - s * 0.4, y - s * 1.5, x, y - s * 0.4);
+        ctx.bezierCurveTo(x + s * 0.4, y - s * 1.5, x + s * 1.5, y - s * 0.2, x, y + s);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  </script>
+</body>
+</html>

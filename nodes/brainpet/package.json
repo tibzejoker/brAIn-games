@@ -1,0 +1,21 @@
+{
+  "name": "@brain/node-brainpet",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/handler.js",
+  "types": "dist/handler.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@brain/core": "workspace:*",
+    "@brain/sdk": "workspace:*",
+    "ai": "^6.0.158",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}
