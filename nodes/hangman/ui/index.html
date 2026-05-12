@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>hangman</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #a855f7;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --error: #ef4444;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+    }
+    header h1 { font-size: 14px; color: var(--accent); letter-spacing: 0.02em; }
+    .hint { font-size: 11px; color: var(--muted); }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 12px;
+      background: var(--bg); border: 1px solid var(--border); font-size: 11px;
+    }
+    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .pill.ok .dot { background: var(--ok); }
+    .pill.warn .dot { background: var(--warn); }
+    .pill.err .dot { background: var(--error); }
+
+    main {
+      flex: 1; padding: 18px; overflow: auto;
+      display: grid; gap: 16px;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      max-width: 980px; width: 100%; margin: 0 auto;
+    }
+    @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .card h2 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); margin-bottom: 10px;
+    }
+
+    pre.gallows {
+      font: 14px/1.1 ui-monospace, monospace;
+      color: var(--text); background: var(--bg);
+      padding: 14px; border-radius: 4px; border: 1px solid var(--border);
+      text-align: left; display: inline-block; min-width: 14ch;
+    }
+
+    .masked {
+      font: 700 28px/1 ui-monospace, monospace;
+      letter-spacing: 0.18em; text-align: center;
+      padding: 14px 8px; margin-top: 10px;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    }
+
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    input[type=text], button {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      padding: 6px 10px; border-radius: 4px; font: inherit; font-size: 13px;
+    }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: #9333ea; }
+    button.ghost:hover { border-color: var(--accent); }
+    button.danger { background: var(--error); color: white; border-color: var(--error); }
+    button.danger:hover { background: #c53030; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .grow { flex: 1; min-width: 180px; }
+
+    .lives { display: inline-flex; gap: 4px; font-size: 18px; line-height: 1; }
+    .lives .heart.gone { filter: grayscale(1); opacity: 0.35; }
+
+    .letters {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+    }
+    .letter {
+      width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+      font: 600 13px ui-monospace, monospace; border-radius: 4px;
+      background: var(--panel-2); border: 1px solid var(--border);
+    }
+    .letter.right { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.5); color: #bbf7d0; }
+    .letter.wrong { background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.5); color: #fecaca; }
+
+    .narration {
+      max-height: 280px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 4px;
+    }
+    .narration .line {
+      padding: 6px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+      font-size: 12px; line-height: 1.45;
+    }
+    .narration .empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 8px 0; }
+    .narration code { background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>hangman</h1>
+      <div class="hint">LLM picks a themed word — guess from this UI or any connected chat surface.</div>
+    </div>
+    <div class="pill" id="status"><span class="dot"></span><span id="status-text">loading…</span></div>
+  </header>
+
+  <main>
+
+    <!-- Left column: gallows + lives + controls -->
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="card">
+        <h2>Board</h2>
+        <pre class="gallows" id="gallows">no game yet — start one →</pre>
+        <div class="row" style="margin-top: 12px; justify-content: space-between;">
+          <div>
+            <span class="hint">Lives</span>
+            <span class="lives" id="lives"></span>
+          </div>
+          <div class="hint" id="theme-pill"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Controls</h2>
+        <div class="row" style="margin-bottom: 8px;">
+          <input id="theme" type="text" class="grow" placeholder="Theme (optional) — e.g. cuisine, animals, space" autocomplete="off" />
+          <button id="start" class="primary">▶ Start</button>
+        </div>
+        <div class="row">
+          <button id="hint" class="ghost" disabled>💡 Hint</button>
+          <button id="quit" class="danger" disabled>■ Quit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: word + tried + narration -->
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="card">
+        <h2>Word</h2>
+        <div class="masked" id="masked">— — —</div>
+        <div class="row" style="margin-top: 10px;">
+          <input id="guess" type="text" class="grow" placeholder="Type a letter — or the full word — and Enter" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" disabled />
+          <button id="guess-btn" class="primary" disabled>Guess</button>
+        </div>
+        <p class="hint" style="margin-top: 6px;">Tip — you can also type guesses from any chat surface connected to the bus (Telegram, WhatsApp, Discord, the web chat node). Same game everywhere.</p>
+      </div>
+
+      <div class="card">
+        <h2>Letters tried</h2>
+        <div class="letters" id="letters"><span class="hint">None yet.</span></div>
+      </div>
+
+      <div class="card">
+        <h2>Narration</h2>
+        <div class="narration" id="narration">
+          <div class="empty">The game's commentary will appear here — and on every connected chat surface.</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const nodeId = window.location.pathname.split('/nodes/')[1]?.split('/ui')[0];
+    const apiBase = window.location.origin;
+
+    const els = {
+      status: document.getElementById('status'),
+      statusText: document.getElementById('status-text'),
+      gallows: document.getElementById('gallows'),
+      lives: document.getElementById('lives'),
+      themePill: document.getElementById('theme-pill'),
+      theme: document.getElementById('theme'),
+      start: document.getElementById('start'),
+      hint: document.getElementById('hint'),
+      quit: document.getElementById('quit'),
+      masked: document.getElementById('masked'),
+      guess: document.getElementById('guess'),
+      guessBtn: document.getElementById('guess-btn'),
+      letters: document.getElementById('letters'),
+      narration: document.getElementById('narration'),
+    };
+
+    let lastMessageId = null;
+    let currentStatus = 'idle';
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function setPill(state, text) {
+      els.status.className = `pill ${state}`;
+      els.statusText.textContent = text;
+    }
+
+    function renderLives(lives, max) {
+      const filled = Math.max(0, lives);
+      const gone = Math.max(0, max - lives);
+      let html = '';
+      for (let i = 0; i < filled; i++) html += `<span class="heart">❤️</span>`;
+      for (let i = 0; i < gone; i++) html += `<span class="heart gone">🖤</span>`;
+      els.lives.innerHTML = html;
+    }
+
+    function renderLetters(tried, wrong) {
+      const wrongSet = new Set(wrong);
+      if (tried.length === 0) {
+        els.letters.innerHTML = '<span class="hint">None yet.</span>';
+        return;
+      }
+      const sorted = [...tried].sort();
+      els.letters.innerHTML = sorted.map((l) =>
+        `<span class="letter ${wrongSet.has(l) ? 'wrong' : 'right'}">${escapeHtml(l)}</span>`,
+      ).join('');
+    }
+
+    function applyState(state) {
+      currentStatus = state.status;
+      const playing = state.status === 'playing';
+      els.gallows.textContent = state.stage || '';
+      els.masked.textContent = state.masked
+        ? (state.status === 'won' || state.status === 'lost'
+            ? state.word.toUpperCase()
+            : state.masked)
+        : '— — —';
+      renderLives(state.lives ?? 0, state.max_lives ?? 6);
+      renderLetters(state.tried ?? [], state.wrong ?? []);
+      els.themePill.textContent = state.theme ? `theme: ${state.theme}` : '';
+
+      els.guess.disabled = !playing;
+      els.guessBtn.disabled = !playing;
+      els.hint.disabled = !playing;
+      els.quit.disabled = !playing;
+
+      if (state.status === 'idle') setPill('warn', 'idle — click ▶ Start');
+      else if (state.status === 'playing') setPill('ok', `${state.lives} lives · ${state.tried.length} tried`);
+      else if (state.status === 'won') setPill('ok', `won 🎉 (${state.word})`);
+      else if (state.status === 'lost') setPill('err', `lost 💀 (${state.word})`);
+    }
+
+    function addNarration(text) {
+      const empty = els.narration.querySelector('.empty');
+      empty?.remove();
+      const div = document.createElement('div');
+      div.className = 'line';
+      // very lightweight markdown for *italic*/*bold* and `code`
+      const html = escapeHtml(text)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
+      div.innerHTML = html;
+      els.narration.appendChild(div);
+      els.narration.scrollTop = els.narration.scrollHeight;
+      while (els.narration.children.length > 50) els.narration.firstChild.remove();
+    }
+
+    async function pollMessages() {
+      try {
+        const res = await fetch(`${apiBase}/nodes/${nodeId}/ui/messages`);
+        if (!res.ok) { setPill('err', 'node not running'); return; }
+        const messages = await res.json();
+        let startIdx = 0;
+        if (lastMessageId) {
+          const idx = messages.findIndex((m) => m.id === lastMessageId);
+          if (idx >= 0) startIdx = idx + 1;
+        }
+        for (const msg of messages.slice(startIdx)) {
+          handleMessage(msg);
+          lastMessageId = msg.id;
+        }
+      } catch { setPill('err', 'disconnected'); }
+    }
+
+    function handleMessage(msg) {
+      if (msg.topic === 'game.hangman.state') {
+        try {
+          const data = JSON.parse(msg.payload.content);
+          applyState(data);
+        } catch { /* malformed */ }
+      } else if (msg.topic === 'chat.response') {
+        const fromGame = msg.metadata?.from_game;
+        if (fromGame === 'hangman' || msg.from === nodeId) {
+          addNarration(msg.payload?.content ?? '');
+        }
+      }
+    }
+
+    async function sendCommand(action, extra = {}) {
+      try {
+        await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: 'game.hangman.command',
+            content: JSON.stringify({ action, ...extra }),
+            from: 'system.hangman-ui',
+            criticality: 4,
+            metadata: { action, ...extra },
+          }),
+        });
+      } catch (e) {
+        addNarration(`UI error: ${e.message}`);
+      }
+    }
+
+    async function sendGuess(input) {
+      const guess = input.trim();
+      if (!guess) return;
+      try {
+        await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: 'chat.input',
+            content: guess,
+            from: 'system.hangman-ui',
+            criticality: 3,
+            // is_game_move tells the brain "skip me" — the game node
+            // already handles short letter/word guesses on chat.input.
+            // We deliberately do NOT add from_game here: the game's own
+            // chat.input filter uses that tag to drop narration echoes,
+            // and tagging UI clicks the same way would make the handler
+            // skip the player's own guess.
+            metadata: { platform: 'web', sender: 'you', is_game_move: true },
+          }),
+        });
+      } catch (e) {
+        addNarration(`UI error: ${e.message}`);
+      }
+    }
+
+    els.start.addEventListener('click', () => sendCommand('start', { theme: els.theme.value.trim() || undefined }));
+    els.hint.addEventListener('click', () => sendCommand('hint'));
+    els.quit.addEventListener('click', () => {
+      if (!confirm('Abandon the current game?')) return;
+      sendCommand('quit');
+    });
+    els.guessBtn.addEventListener('click', () => {
+      const v = els.guess.value;
+      els.guess.value = '';
+      sendGuess(v);
+    });
+    els.guess.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') els.guessBtn.click();
+    });
+    els.theme.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') els.start.click();
+    });
+
+    pollMessages();
+    setInterval(pollMessages, 1200);
+    // Ask the node for its current state so a freshly-loaded UI doesn't sit blank.
+    setTimeout(() => sendCommand('status'), 300);
+  </script>
+</body>
+</html>

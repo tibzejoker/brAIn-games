@@ -1,0 +1,8 @@
+{
+  "name": "brAIn-games",
+  "private": true,
+  "license": "MIT",
+  "description": "brAIn games — LLM-driven game nodes that plug into any chat surface (web chat, telegram, whatsapp, discord). One conversation, one game, every surface in sync.",
+  "scripts": { "build": "pnpm -r build" },
+  "devDependencies": { "@types/node": "^20.11.0", "typescript": "^5.4.0" }
+}

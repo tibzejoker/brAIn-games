@@ -1,0 +1,392 @@
+import type {
+  NodeContext,
+  NodeHandler,
+  TextPayload,
+} from "@brain/sdk";
+import { LLMRegistry, generateText } from "@brain/core";
+
+const MAX_LIVES = 6;
+const DEFAULT_MODEL = "ollama/gemma4:e4b";
+
+/** Canonical Hangman stick-figure stages. Index = wrong guesses so far (0 = pristine). */
+const STAGES = [
+  ["  +---+", "  |   |", "      |", "      |", "      |", "      |", "========="],
+  ["  +---+", "  |   |", "  O   |", "      |", "      |", "      |", "========="],
+  ["  +---+", "  |   |", "  O   |", "  |   |", "      |", "      |", "========="],
+  ["  +---+", "  |   |", "  O   |", " /|   |", "      |", "      |", "========="],
+  ["  +---+", "  |   |", "  O   |", " /|\\  |", "      |", "      |", "========="],
+  ["  +---+", "  |   |", "  O   |", " /|\\  |", " /    |", "      |", "========="],
+  ["  +---+", "  |   |", "  O   |", " /|\\  |", " / \\  |", "      |", "========="],
+];
+
+export type GameStatus = "idle" | "playing" | "won" | "lost";
+
+export interface GameState {
+  status: GameStatus;
+  word: string | null;
+  theme: string | null;
+  tried: string[];     // letters tried (right + wrong), uppercase
+  wrong: string[];     // wrong letters only
+  lives: number;
+  started_at: number | null;
+  ended_at: number | null;
+  last_guesser?: string | null;
+}
+
+export type ControlAction = "start" | "hint" | "quit" | "status";
+
+export interface ControlPayload {
+  action?: ControlAction;
+  theme?: string;
+}
+
+/** Build the masked word as an array of letters or null (still hidden). */
+export function maskWord(word: string, tried: string[]): (string | null)[] {
+  const triedSet = new Set(tried.map((l) => l.toUpperCase()));
+  return word.toUpperCase().split("").map((c) =>
+    /[A-Z]/.test(c) ? (triedSet.has(c) ? c : null) : c, // non-letters (space, hyphen) shown
+  );
+}
+
+/** Has every letter of the word been revealed by the player's guesses? */
+export function isSolved(word: string, tried: string[]): boolean {
+  return maskWord(word, tried).every((c) => c !== null);
+}
+
+/** Joined ASCII representation of the current hangman state for the bus / UI fallback. */
+export function renderStage(wrongCount: number): string {
+  const idx = Math.min(wrongCount, STAGES.length - 1);
+  return STAGES[idx].join("\n");
+}
+
+/** Pretty version of the masked word for chat narration ("R _ A C _"). */
+export function renderMasked(word: string, tried: string[]): string {
+  return maskWord(word, tried).map((c) => c ?? "_").join(" ");
+}
+
+/** Single-letter or whole-word guess? Returns the canonical form, or null if neither. */
+export function classifyGuess(input: string, wordLen: number): { kind: "letter" | "word"; value: string } | null {
+  const s = input.trim();
+  if (/^[a-zA-Z]$/.test(s)) return { kind: "letter", value: s.toUpperCase() };
+  if (/^[a-zA-Z]+$/.test(s) && s.length === wordLen) return { kind: "word", value: s.toUpperCase() };
+  return null;
+}
+
+function emptyState(): GameState {
+  return {
+    status: "idle",
+    word: null,
+    theme: null,
+    tried: [],
+    wrong: [],
+    lives: MAX_LIVES,
+    started_at: null,
+    ended_at: null,
+    last_guesser: null,
+  };
+}
+
+function getState(ctx: NodeContext): GameState {
+  const existing = ctx.state.game as GameState | undefined;
+  if (existing) return existing;
+  const fresh = emptyState();
+  ctx.state.game = fresh;
+  return fresh;
+}
+
+/** Publish a UI-bound state snapshot. We never publish the answer when the
+ *  game is still active — only mask + tried letters — so chat surfaces
+ *  can't leak it via metadata inspection. */
+function publishState(ctx: NodeContext, state: GameState): void {
+  const ended = state.status === "won" || state.status === "lost";
+  ctx.publish("game.hangman.state", {
+    type: "text",
+    criticality: 1,
+    payload: { content: JSON.stringify({
+      status: state.status,
+      theme: state.theme,
+      masked: state.word ? renderMasked(state.word, state.tried) : null,
+      tried: state.tried,
+      wrong: state.wrong,
+      lives: state.lives,
+      max_lives: MAX_LIVES,
+      stage: renderStage(state.wrong.length),
+      // Only reveal the answer once the game is over.
+      word: ended ? state.word : null,
+      started_at: state.started_at,
+      ended_at: state.ended_at,
+    }) },
+  });
+}
+
+/** Narration through chat.response — visible on every connected surface. */
+function narrate(ctx: NodeContext, text: string): void {
+  ctx.publish("chat.response", {
+    type: "text",
+    criticality: 3,
+    payload: { content: text },
+    metadata: { from_game: "hangman" },
+  });
+}
+
+const PICK_WORD_SYSTEM = [
+  "You are picking ONE word for a Hangman game.",
+  "Reply with EXACTLY the word — no quotes, no punctuation, no explanation.",
+  "Constraints:",
+  "- 4 to 12 letters, English only, alphabetic only (no spaces, no hyphens, no digits)",
+  "- Common-enough that a fluent English speaker can recognise it",
+  "- All-lowercase in your reply",
+].join("\n");
+
+/**
+ * `ctx.callLLM` only resolves inside the dedicated LLM runner that
+ * powers brain — for plain service nodes it throws "not implemented".
+ * We talk to the registry directly, same way the brain handler does.
+ */
+async function callLLM(
+  modelName: string,
+  system: string,
+  user: string,
+  signal: AbortSignal,
+  maxOutputTokens = 64,
+): Promise<string | null> {
+  const registry = LLMRegistry.getInstance();
+  await registry.initialize();
+  const model = registry.getModel(modelName);
+  const result = await generateText({
+    model,
+    system,
+    messages: [{ role: "user", content: user }],
+    maxOutputTokens,
+    abortSignal: signal,
+  });
+  const r = result as unknown as Record<string, unknown>;
+  if (typeof result.text === "string" && result.text) return result.text;
+  if (Array.isArray(r.steps) && r.steps.length > 0) {
+    const s = r.steps[0] as Record<string, unknown>;
+    if (typeof s.text === "string") return s.text;
+  }
+  return null;
+}
+
+async function pickWord(ctx: NodeContext, theme: string | null): Promise<string | null> {
+  const model = (ctx.node.config_overrides?.model as string | undefined) ?? DEFAULT_MODEL;
+  const userPrompt = theme
+    ? `Pick a Hangman word about: ${theme}.`
+    : `Pick any interesting Hangman word.`;
+  try {
+    const text = await callLLM(model, PICK_WORD_SYSTEM, userPrompt, ctx.signal);
+    if (!text) return null;
+    const match = text.trim().toLowerCase().match(/[a-z]{4,12}/);
+    return match ? match[0] : null;
+  } catch (err) {
+    ctx.log("warn", `hangman: LLM pick word failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+async function pickHint(ctx: NodeContext, state: GameState): Promise<string | null> {
+  if (!state.word) return null;
+  const model = (ctx.node.config_overrides?.model as string | undefined) ?? DEFAULT_MODEL;
+  const masked = renderMasked(state.word, state.tried);
+  const system = [
+    "You are a Hangman hint assistant.",
+    "Give ONE short, playful hint about the word — without revealing it directly.",
+    "Two sentences max. Never mention any letter of the word.",
+  ].join("\n");
+  try {
+    const text = await callLLM(
+      model, system,
+      `Word (hidden, do NOT echo): ${state.word}\nMasked so far: ${masked}\nTheme: ${state.theme ?? "any"}\nGive one hint.`,
+      ctx.signal,
+      120,
+    );
+    return text?.trim() || null;
+  } catch (err) {
+    ctx.log("warn", `hangman: LLM hint failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+async function startGame(ctx: NodeContext, theme: string | null): Promise<void> {
+  const state = getState(ctx);
+  state.status = "playing";
+  state.tried = [];
+  state.wrong = [];
+  state.lives = MAX_LIVES;
+  state.theme = theme;
+  state.word = null;
+  state.started_at = Date.now();
+  state.ended_at = null;
+  publishState(ctx, state);
+  narrate(ctx, `🎯 Hangman — picking a word${theme ? ` about *${theme}*` : ""}…`);
+
+  const word = await pickWord(ctx, theme);
+  if (!word) {
+    state.status = "idle";
+    state.started_at = null;
+    publishState(ctx, state);
+    narrate(ctx, "Couldn't pick a word — is the LLM provider up? Type `hangman` again to retry.");
+    return;
+  }
+  state.word = word;
+  publishState(ctx, state);
+  narrate(ctx, `Word ready: \`${renderMasked(word, [])}\` (${word.length} letters, ${state.lives} lives). Guess a letter or the whole word — any chat surface works.`);
+}
+
+function endGame(ctx: NodeContext, state: GameState, win: boolean): void {
+  state.status = win ? "won" : "lost";
+  state.ended_at = Date.now();
+  publishState(ctx, state);
+  if (win) {
+    narrate(ctx, `🎉 Won! The word was *${state.word}*. Type \`hangman\` to go again.`);
+  } else {
+    narrate(ctx, `💀 Out of lives — the word was *${state.word}*. ${renderStage(MAX_LIVES)}\nType \`hangman\` for a fresh game.`);
+  }
+}
+
+async function handleLetterGuess(ctx: NodeContext, state: GameState, letter: string, who: string | null): Promise<void> {
+  if (state.tried.includes(letter)) {
+    narrate(ctx, `Already tried *${letter}*. Letters tried: ${state.tried.join(" ")}`);
+    return;
+  }
+  state.tried.push(letter);
+  state.last_guesser = who;
+  const inWord = state.word!.toUpperCase().includes(letter);
+  if (!inWord) {
+    state.wrong.push(letter);
+    state.lives -= 1;
+  }
+
+  if (isSolved(state.word!, state.tried)) {
+    endGame(ctx, state, true);
+    return;
+  }
+  if (state.lives <= 0) {
+    endGame(ctx, state, false);
+    return;
+  }
+
+  publishState(ctx, state);
+  const masked = renderMasked(state.word!, state.tried);
+  const reaction = inWord
+    ? `✅ *${letter}* — nice! \`${masked}\` · ${state.lives} lives left.`
+    : `❌ *${letter}* — not in the word. \`${masked}\` · ${state.lives} lives left.`;
+  narrate(ctx, reaction);
+}
+
+async function handleWordGuess(ctx: NodeContext, state: GameState, guess: string, who: string | null): Promise<void> {
+  state.last_guesser = who;
+  if (guess.toUpperCase() === state.word!.toUpperCase()) {
+    // Mark every letter tried so the mask reveals fully on the final state.
+    for (const c of state.word!.toUpperCase().split("")) {
+      if (/[A-Z]/.test(c) && !state.tried.includes(c)) state.tried.push(c);
+    }
+    endGame(ctx, state, true);
+    return;
+  }
+  state.lives -= 1;
+  if (state.lives <= 0) {
+    endGame(ctx, state, false);
+    return;
+  }
+  publishState(ctx, state);
+  narrate(ctx, `❌ Not *${guess.toLowerCase()}* — wrong full-word guess (−1 life). ${state.lives} lives left.`);
+}
+
+/**
+ * Parse a control payload either as strict JSON (`{action, theme?}`) or as
+ * a loose natural string the brain LLM might emit when it isn't perfectly
+ * structured ("start cuisine", "hint", "quit"). Falls back to message
+ * metadata as a last resort.
+ */
+export function parseControl(content: string | undefined, metaFallback?: ControlPayload): ControlPayload {
+  const raw = (content ?? "").trim();
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ControlPayload;
+      if (parsed && typeof parsed === "object" && parsed.action) return parsed;
+    } catch { /* not JSON */ }
+    const m = raw.match(/^(start|hint|quit|stop|abandon|status)\b\s*(.*)$/i);
+    if (m) {
+      const verb = m[1].toLowerCase();
+      const action: ControlAction =
+        verb === "stop" || verb === "abandon" ? "quit" :
+        (verb as ControlAction);
+      const rest = m[2]?.trim();
+      const out: ControlPayload = { action };
+      if (action === "start" && rest) out.theme = rest;
+      return out;
+    }
+  }
+  return metaFallback ?? {};
+}
+
+function senderOf(msg: Parameters<NodeHandler>[0]["messages"][number]): string | null {
+  const meta = msg.metadata as { sender?: string; platform?: string } | undefined;
+  if (!meta) return null;
+  if (meta.sender && meta.platform) return `${meta.sender} (${meta.platform})`;
+  return meta.sender ?? null;
+}
+
+export const handler: NodeHandler = async (ctx) => {
+  const state = getState(ctx);
+
+  for (const msg of ctx.messages) {
+    if (msg.topic === "game.hangman.command") {
+      const payload = msg.payload as TextPayload;
+      const ctrl = parseControl(payload.content, msg.metadata as ControlPayload | undefined);
+
+      if (ctrl.action === "start") {
+        await startGame(ctx, ctrl.theme?.trim() || null);
+      } else if (ctrl.action === "hint") {
+        if (state.status !== "playing") {
+          narrate(ctx, "No active game — type `hangman` to start one.");
+        } else {
+          const hint = await pickHint(ctx, state);
+          if (hint) narrate(ctx, `💡 ${hint}`);
+          else narrate(ctx, "Couldn't conjure a hint (LLM hiccup). Try again.");
+        }
+      } else if (ctrl.action === "quit") {
+        if (state.status === "playing") {
+          narrate(ctx, `Game abandoned. The word was *${state.word}*.`);
+        }
+        ctx.state.game = emptyState();
+        publishState(ctx, ctx.state.game as GameState);
+      } else if (ctrl.action === "status") {
+        publishState(ctx, state);
+      }
+      continue;
+    }
+
+    if (msg.topic !== "chat.input") continue;
+    // Drop our own narrations + game responses that loop back through bridges.
+    const meta = (msg.metadata ?? {}) as { from_game?: string };
+    if (meta.from_game === "hangman") continue;
+
+    const payload = msg.payload as TextPayload;
+    const raw = payload?.content?.trim();
+    if (!raw) continue;
+
+    // No natural-language trigger parsing here — the brain node is the
+    // NLU front-end of the whole network. When the user says "let's
+    // play hangman about cuisine" / "donne-moi un indice" / "arrête" on
+    // any chat surface, the brain's LLM picks up the intent and
+    // publishes the right `{action, theme?}` payload on
+    // `game.hangman.command` via its `publish_message` tool. Our
+    // config.json describes the schema in plain English so the brain
+    // knows what to send.
+    //
+    // chat.input is only interpreted as a *guess* (single letter or
+    // full word matching the answer length) — and only while a game is
+    // already active. Anything else is ignored on purpose; the brain
+    // handles it.
+    if (state.status !== "playing" || !state.word) continue;
+    const cls = classifyGuess(raw, state.word.length);
+    if (!cls) continue; // ignore unrelated chat
+    if (cls.kind === "letter") await handleLetterGuess(ctx, state, cls.value, senderOf(msg));
+    else await handleWordGuess(ctx, state, cls.value, senderOf(msg));
+  }
+};
+
+export default handler;

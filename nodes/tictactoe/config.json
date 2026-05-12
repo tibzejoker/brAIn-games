@@ -1,0 +1,23 @@
+{
+  "name": "tictactoe",
+  "description": "Tic-tac-toe (morpion) game service. Human plays X by default, the LLM plays O. To start / quit / query a game, publish on `game.tictactoe.command` with content either JSON `{action, mark?}` or a loose string. Recognised commands: `start` (optionally with `mark: 'X'|'O'` — default X), `quit`, `status`. The board is numpad-indexed 1-9 (1=top-left, 5=center, 9=bottom-right). Moves arrive on `chat.input` while a game is active — a single digit 1-9 is treated as a cell pick. Narrates every state change on `chat.response` so every connected chat surface stays in sync.",
+  "tags": ["game", "tictactoe", "morpion", "llm"],
+  "default_authority": 0,
+  "default_priority": 4,
+  "default_subscriptions": [
+    {
+      "topic": "chat.input",
+      "description": "During an active game it's the player's turn input — a single digit 1-9 picks that cell on the board. Outside a game, plain text is ignored."
+    },
+    {
+      "topic": "game.tictactoe.command",
+      "description": "Game control plane. Publish `{\"action\":\"start\"}` or `{\"action\":\"start\",\"mark\":\"O\"}` to start, `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish current state. Loose content like `start` or `start O` also works."
+    }
+  ],
+  "default_publishes": [
+    "chat.response",
+    "game.tictactoe.state"
+  ],
+  "has_ui": true,
+  "supports_transport": ["process"]
+}

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tic-tac-toe</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #06b6d4;
+      --x: #f472b6;
+      --o: #60a5fa;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --error: #ef4444;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+    }
+    header h1 { font-size: 14px; color: var(--accent); letter-spacing: 0.02em; }
+    .hint { font-size: 11px; color: var(--muted); }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 12px;
+      background: var(--bg); border: 1px solid var(--border); font-size: 11px;
+    }
+    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .pill.ok .dot { background: var(--ok); }
+    .pill.warn .dot { background: var(--warn); }
+    .pill.err .dot { background: var(--error); }
+
+    main {
+      flex: 1; padding: 18px; overflow: auto;
+      display: grid; gap: 16px;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      max-width: 880px; width: 100%; margin: 0 auto;
+    }
+    @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .card h2 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); margin-bottom: 10px;
+    }
+
+    .board {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+      background: var(--bg); padding: 8px; border-radius: 8px;
+      aspect-ratio: 1;
+      max-width: 280px;
+    }
+    .cell {
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font: 700 38px/1 ui-sans-serif, system-ui, sans-serif;
+      cursor: pointer; user-select: none;
+      transition: background 0.12s, border-color 0.12s, transform 0.08s;
+      position: relative;
+      min-height: 64px;
+    }
+    .cell:hover:not(:disabled):not(.taken) { border-color: var(--accent); background: rgba(6,182,212,0.08); }
+    .cell:active:not(:disabled) { transform: scale(0.96); }
+    .cell.X { color: var(--x); }
+    .cell.O { color: var(--o); }
+    .cell.taken { cursor: not-allowed; }
+    .cell.win { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.6); }
+    .cell .num {
+      position: absolute; top: 4px; left: 6px;
+      font-size: 11px; color: var(--muted); font-weight: 400;
+    }
+    .cell:not(.taken):not(.win) .num { color: rgba(148,163,184,0.4); }
+
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button.primary, button.ghost, button.danger {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      padding: 6px 12px; border-radius: 4px; font: inherit; font-size: 13px;
+      cursor: pointer;
+    }
+    button.primary { background: var(--accent); color: #0f172a; border-color: var(--accent); font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: #0891b2; }
+    button.ghost:hover { border-color: var(--accent); }
+    button.danger { background: var(--error); color: white; border-color: var(--error); }
+    button.danger:hover:not(:disabled) { background: #c53030; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    select {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      padding: 6px 10px; border-radius: 4px; font: inherit; font-size: 13px;
+    }
+
+    .narration {
+      max-height: 360px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .narration .line {
+      padding: 6px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+      font-size: 12px; line-height: 1.45; white-space: pre-wrap;
+    }
+    .narration .line pre {
+      background: var(--bg); padding: 4px 6px; border-radius: 3px;
+      font: 11px ui-monospace, monospace; display: inline-block; margin: 4px 0;
+    }
+    .narration .empty { color: var(--muted); font-style: italic; font-size: 12px; padding: 8px 0; }
+    .narration code { background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+    .turn-banner { font-weight: 600; font-size: 13px; }
+    .turn-banner.you { color: var(--ok); }
+    .turn-banner.them { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>tic-tac-toe</h1>
+      <div class="hint">You play vs the LLM — click a cell or type 1-9 from any chat surface.</div>
+    </div>
+    <div class="pill" id="status"><span class="dot"></span><span id="status-text">loading…</span></div>
+  </header>
+
+  <main>
+
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+      <div class="card">
+        <h2>Board</h2>
+        <div class="board" id="board">
+          <!-- cells rendered by JS -->
+        </div>
+        <div class="row" style="margin-top: 10px; justify-content: space-between;">
+          <div class="turn-banner" id="turn-banner">idle</div>
+          <div class="hint" id="score-hint"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Controls</h2>
+        <div class="row" style="margin-bottom: 8px;">
+          <label class="hint">Play as</label>
+          <select id="mark">
+            <option value="X">X (you start)</option>
+            <option value="O">O (LLM starts)</option>
+          </select>
+          <button id="start" class="primary">▶ New game</button>
+        </div>
+        <div class="row">
+          <button id="quit" class="danger" disabled>■ Quit</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Narration</h2>
+      <div class="narration" id="narration">
+        <div class="empty">Start a game — the commentary appears here and on every connected chat surface.</div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const nodeId = window.location.pathname.split('/nodes/')[1]?.split('/ui')[0];
+    const apiBase = window.location.origin;
+
+    const els = {
+      status: document.getElementById('status'),
+      statusText: document.getElementById('status-text'),
+      board: document.getElementById('board'),
+      turnBanner: document.getElementById('turn-banner'),
+      scoreHint: document.getElementById('score-hint'),
+      mark: document.getElementById('mark'),
+      start: document.getElementById('start'),
+      quit: document.getElementById('quit'),
+      narration: document.getElementById('narration'),
+    };
+
+    let lastMessageId = null;
+    let currentState = null;
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function setPill(state, text) {
+      els.status.className = `pill ${state}`;
+      els.statusText.textContent = text;
+    }
+
+    function renderBoard(state) {
+      const winSet = new Set(state?.winning_line ?? []);
+      els.board.innerHTML = '';
+      for (let i = 0; i < 9; i++) {
+        const mark = state?.board?.[i] ?? null;
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        if (mark) cell.classList.add(mark, 'taken');
+        if (winSet.has(i)) cell.classList.add('win');
+        cell.innerHTML = `<span class="num">${i + 1}</span>${mark ?? ''}`;
+        cell.addEventListener('click', () => onCellClick(i));
+        els.board.appendChild(cell);
+      }
+    }
+
+    function applyState(state) {
+      currentState = state;
+      renderBoard(state);
+      const playing = state.status === 'playing';
+      els.quit.disabled = !playing;
+      els.start.disabled = playing;
+      els.mark.disabled = playing;
+
+      if (state.status === 'idle') {
+        setPill('warn', 'idle — pick a side and start');
+        els.turnBanner.textContent = '—';
+        els.turnBanner.className = 'turn-banner';
+      } else if (playing) {
+        const yours = state.turn === state.player;
+        setPill('ok', yours ? 'your turn' : `${state.llm} thinking…`);
+        els.turnBanner.textContent = yours ? `your turn (${state.player})` : `${state.llm} thinking…`;
+        els.turnBanner.className = `turn-banner ${yours ? 'you' : 'them'}`;
+      } else if (state.status === 'won') {
+        const youWon = state.winner === state.player;
+        setPill(youWon ? 'ok' : 'err', youWon ? `you win 🎉 (${state.player})` : `LLM wins 💀 (${state.llm})`);
+        els.turnBanner.textContent = youWon ? '🎉 you win!' : '💀 LLM wins';
+        els.turnBanner.className = `turn-banner ${youWon ? 'you' : 'them'}`;
+      } else if (state.status === 'tie') {
+        setPill('warn', 'tie 🤝');
+        els.turnBanner.textContent = '🤝 tie';
+        els.turnBanner.className = 'turn-banner';
+      }
+      els.scoreHint.textContent = `move ${state.move_count}/9`;
+    }
+
+    function addNarration(text) {
+      const empty = els.narration.querySelector('.empty');
+      empty?.remove();
+      const div = document.createElement('div');
+      div.className = 'line';
+      // tiny markdown: *bold*, `code`, ```fenced``` blocks
+      const fenced = escapeHtml(text)
+        .replace(/```\n([\s\S]+?)\n```/g, '<pre>$1</pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
+      div.innerHTML = fenced;
+      els.narration.appendChild(div);
+      els.narration.scrollTop = els.narration.scrollHeight;
+      while (els.narration.children.length > 60) els.narration.firstChild.remove();
+    }
+
+    async function pollMessages() {
+      try {
+        const res = await fetch(`${apiBase}/nodes/${nodeId}/ui/messages`);
+        if (!res.ok) { setPill('err', 'node not running'); return; }
+        const messages = await res.json();
+        let startIdx = 0;
+        if (lastMessageId) {
+          const idx = messages.findIndex((m) => m.id === lastMessageId);
+          if (idx >= 0) startIdx = idx + 1;
+        }
+        for (const msg of messages.slice(startIdx)) {
+          handleMessage(msg);
+          lastMessageId = msg.id;
+        }
+      } catch { setPill('err', 'disconnected'); }
+    }
+
+    function handleMessage(msg) {
+      if (msg.topic === 'game.tictactoe.state') {
+        try {
+          const data = JSON.parse(msg.payload.content);
+          applyState(data);
+        } catch { /* malformed */ }
+      } else if (msg.topic === 'chat.response') {
+        const fromGame = msg.metadata?.from_game;
+        if (fromGame === 'tictactoe' || msg.from === nodeId) {
+          addNarration(msg.payload?.content ?? '');
+        }
+      }
+    }
+
+    async function sendCommand(action, extra = {}) {
+      try {
+        await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: 'game.tictactoe.command',
+            content: JSON.stringify({ action, ...extra }),
+            from: 'system.tictactoe-ui',
+            criticality: 4,
+            metadata: { action, ...extra },
+          }),
+        });
+      } catch (e) { addNarration(`UI error: ${e.message}`); }
+    }
+
+    async function sendCellPick(cell) {
+      try {
+        await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: 'chat.input',
+            content: String(cell + 1),
+            from: 'system.tictactoe-ui',
+            criticality: 3,
+            // is_game_move tells the brain "skip me" — the game node
+            // already handles short numeric moves on chat.input, no need
+            // for the brain to butt in. We deliberately do NOT add
+            // from_game here: the game's own chat.input filter uses that
+            // tag to drop *narration* echoes, and tagging UI clicks the
+            // same way would make the handler skip the player's own move.
+            metadata: { platform: 'web', sender: 'you', is_game_move: true },
+          }),
+        });
+      } catch (e) { addNarration(`UI error: ${e.message}`); }
+    }
+
+    function onCellClick(i) {
+      if (!currentState || currentState.status !== 'playing') return;
+      if (currentState.board[i] !== null) return;
+      if (currentState.turn !== currentState.player) return;
+      sendCellPick(i);
+    }
+
+    els.start.addEventListener('click', () => sendCommand('start', { mark: els.mark.value }));
+    els.quit.addEventListener('click', () => {
+      if (!confirm('Quit the current game?')) return;
+      sendCommand('quit');
+    });
+
+    pollMessages();
+    setInterval(pollMessages, 1200);
+    setTimeout(() => sendCommand('status'), 300);
+  </script>
+</body>
+</html>
