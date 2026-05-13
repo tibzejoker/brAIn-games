@@ -7,7 +7,27 @@
   "default_subscriptions": [
     {
       "topic": "game.hangman.command",
-      "description": "Sole entry point for the game. Publish `{\"action\":\"start\"}` (optionally with `theme`) to start a round, `{\"action\":\"hint\"}` for a clue, `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish the current state. To play a letter / full-word guess: `{\"action\":\"guess\",\"value\":\"a\"}` or `{\"action\":\"guess\",\"value\":\"banana\"}` — classifier rejects anything that isn't a single letter or a word of the answer's length. The brain node should forward EVERY letter the player types here while a game is active; classification + game logic happen inside the handler."
+      "description": "Sole entry point for the game. Publish one of: start (optionally with theme), hint, quit, status, or guess (with `value` = single letter OR full word of the answer's length). The brain node forwards every letter the player types here while a game is active; classification + game logic happen inside the handler.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["start", "hint", "quit", "stop", "abandon", "status", "guess", "play"],
+            "description": "Which command to run. `start` begins a round, `hint` asks for a clue, `quit`/`stop`/`abandon` end it, `status` republishes current state, `guess`/`play` play a letter or word."
+          },
+          "theme": {
+            "type": "string",
+            "description": "Optional theme for `start` — anything ('cuisine', 'animals', 'star wars'…)."
+          },
+          "value": {
+            "type": "string",
+            "description": "Required for `guess`/`play`: a single letter (A–Z) or a full-word guess matching the answer's length."
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
     }
   ],
   "default_publishes": [

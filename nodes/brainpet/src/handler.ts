@@ -742,7 +742,7 @@ export const handler: NodeHandler = async (ctx) => {
   if (!runtimeSubsAdded) {
     runtimeSubsAdded = true;
     const existing = new Set(ctx.node.subscriptions.map((s) => s.topic));
-    if (!existing.has("brainpet.command")) ctx.subscribe("brainpet.command", { description: "runtime-added control plane" });
+    if (!existing.has("brainpet.command")) ctx.subscribe("brainpet.command", { internal: true, description: "runtime-added control plane" });
   }
 
   let state = readState();
@@ -756,36 +756,22 @@ export const handler: NodeHandler = async (ctx) => {
       state = await runCommand(ctx, state, ctrl);
       continue;
     }
-
-    if (msg.topic !== "chat.input") continue;
-    if ((msg.metadata as { from_game?: string } | undefined)?.from_game === "brainpet") continue;
-    const raw = (msg.payload as TextPayload).content?.trim();
-    if (!raw) continue;
-
-    // Quick care verbs work everywhere (any chat surface).
-    const verb = raw.toLowerCase().match(/^(feed|play|cuddle|pet|clean|sleep|wake|status|kill|revive)\b(?:\s+(.+))?$/);
-    if (verb) {
-      state = await runCommand(ctx, state, parseControl(verb[0], undefined));
-      continue;
-    }
-
-    // Otherwise: addressed if the pet's name appears in the message.
-    if (state?.alive && state.name && new RegExp(`\\b${escapeRegex(state.name)}\\b`, "i").test(raw)) {
-      const speaker = (msg.metadata as { sender?: string } | undefined)?.sender ?? "Someone";
-      state = await handleTalk(ctx, state, raw, speaker);
-      continue;
-    }
+    // Brainpet no longer listens to chat.input directly — the brain
+    // node is the network's sole NLU gateway and forwards user input
+    // here as `{action: "talk" | "feed" | "play" | …}` on
+    // brainpet.command. Avoids the double-fire we used to get (brain
+    // answering "you said hi to the pet" while brainpet simultaneously
+    // ran handleTalk()).
   }
 
-  // Idle tick — apply decay even when no message arrived. Schedule the next
-  // wake at the next "interesting" moment (stat threshold cross).
+  // Stat-decay tick. The handler is now event-driven only — pets stop
+  // self-scheduling. To keep stats moving in the background, the pet
+  // subscribes to a cron tick (`time.tick` from the always-running
+  // clock node, declared in config.json). Every tick the framework
+  // calls us; we apply elapsed-time decay and let the runner park us
+  // again. minutesToNextThreshold is no longer relevant — the cadence
+  // comes from clock, not from us.
   if (state) state = await tick(ctx, state);
-
-  const sleepMin = state ? minutesToNextThreshold(state, (ctx.node.config_overrides?.decay_speed as number | undefined) ?? 1) : 60;
-  ctx.sleep([
-    { type: "timer", value: `${Math.round(sleepMin * 60)}s` },
-    { type: "any" },
-  ]);
 };
 
 async function handleTalk(ctx: NodeContext, state: PetState, text: string, speaker: string): Promise<PetState> {

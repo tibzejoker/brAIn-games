@@ -7,7 +7,22 @@
   "default_subscriptions": [
     {
       "topic": "game.tictactoe.command",
-      "description": "Sole entry point for the game. Publish `{\"action\":\"start\"}` to start (optionally with `mark: 'X'|'O'`), `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish current state. To play a move: `{\"action\":\"move\",\"cell\":5}` — cell is the numpad-indexed 1-9 position. The brain node should forward every digit the player types here while a game is active; legality + game logic happen inside the handler."
+      "description": "Sole entry point for the game. Publish `{\"action\":\"start\"}` to start (optionally with `mark: 'X'|'O'`), `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish current state. To play a move: `{\"action\":\"move\",\"cell\":5}` — cell is the numpad-indexed 1-9 position. The brain node should forward every digit the player types here while a game is active; legality + game logic happen inside the handler.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["start", "quit", "status", "move"] },
+          "mark": { "type": "string", "enum": ["X", "O"] },
+          "cell": {
+            "oneOf": [
+              { "type": "integer", "minimum": 1, "maximum": 9 },
+              { "type": "string", "pattern": "^[1-9]$" }
+            ]
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
     }
   ],
   "default_publishes": [
