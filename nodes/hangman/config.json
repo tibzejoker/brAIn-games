@@ -1,6 +1,6 @@
 {
   "name": "hangman",
-  "description": "Hangman game service. Every interaction — starting a round, asking for a hint, quitting, and EVERY letter / word guess — comes in on `game.hangman.command` with content either a JSON `{action, theme?, value?}` (preferred) or a loose string. Recognised actions: `start` (optional theme = anything, e.g. 'cuisine', 'animals', 'star wars'), `hint`, `quit`, `status`, and `guess` (the letter / full word to play in `value`). Examples — content=`{\"action\":\"start\",\"theme\":\"cuisine\"}`, `{\"action\":\"guess\",\"value\":\"a\"}`, or loose strings like `start cuisine` / `guess a`. The game narrates every event on `chat.response` so every connected chat surface stays in sync.",
+  "description": "Hangman game service. Every interaction — starting a round, asking for a hint, quitting, and EVERY letter / word guess — comes in on `game.hangman.command` with content either a JSON `{action, theme?, value?}` (preferred) or a loose string. Recognised actions: `start` (optional theme = anything, e.g. 'cuisine', 'animals', 'star wars'), `hint`, `quit`, `status`, and `guess` (the letter / full word to play in `value`). Examples — content=`{\"action\":\"start\",\"theme\":\"cuisine\"}`, `{\"action\":\"guess\",\"value\":\"a\"}`, or loose strings like `start cuisine` / `guess a`. The game emits narrative events on `game.hangman.event` (plain text — 'You guessed A! 5 lives left.', '🎉 You won!', etc.) and structured state snapshots on `game.hangman.state` (JSON). The brain node subscribes to game.hangman.event and relays it to the user on chat.response — the game itself does NOT speak to the chat directly.",
   "tags": ["game", "hangman", "llm"],
   "default_authority": 0,
   "default_priority": 4,
@@ -11,7 +11,7 @@
     }
   ],
   "default_publishes": [
-    "chat.response",
+    "game.hangman.event",
     "game.hangman.state"
   ],
   "has_ui": true,

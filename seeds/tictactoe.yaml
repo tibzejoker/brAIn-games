@@ -1,12 +1,19 @@
 # tictactoe — play morpion against the LLM through chat.
 #
-# Topology:
-#   chat ──chat.input──▶ brain ──game.tictactoe.command──▶ tictactoe
-#                       brain ◀──chat.response──── tictactoe ──▶ chat
+# Topology (the brain is the gateway BOTH ways):
 #
-# Say "play tictactoe" in chat → brain starts a game. During the game,
-# type a digit 1-9 (numpad layout, 1=top-left, 5=center, 9=bot-right)
-# to pick a cell — tictactoe reads it straight from chat.input.
+#   chat ──chat.input──▶ brain ──game.tictactoe.command──▶ tictactoe
+#                       brain ◀──game.tictactoe.event──── tictactoe
+#                       brain ──chat.response──▶ chat
+#
+# Forward path: say "play tictactoe" → brain publishes
+# {"action":"start"} on game.tictactoe.command. Then every cell you
+# pick (1-9 numpad layout) is forwarded as {"action":"move","cell":5}.
+#
+# Reverse path: tictactoe emits narrative events on
+# game.tictactoe.event (plain text) and structured state snapshots on
+# game.tictactoe.state (JSON, monitoring-only — not in chat). The
+# brain relays the events in natural language on chat.response.
 
 nodes:
   - type: chat
@@ -14,17 +21,20 @@ nodes:
     description: "Chat UI — say 'play tictactoe' to start, then type a digit 1-9 to move."
     priority: 5
     position: { x: 50, y: 300 }
-    subscriptions:
-      - topic: "chat.response"
-      - topic: "game.tictactoe.state"
+    # chat keeps its default subs. game.tictactoe.state stays OUT —
+    # raw JSON belongs in a monitoring panel.
 
   - type: brain
     name: consciousness
-    description: "Detects 'play tictactoe' intent, drives game.tictactoe.command."
+    description: "NLU gateway. Forwards user input to tictactoe, relays tictactoe's events back to the chat."
     priority: 10
     position: { x: 400, y: 300 }
     subscriptions:
       - topic: "chat.input"
+      - topic: "game.tictactoe.event"
+        description: "Narrative events from the tictactoe game — paraphrase or quote on chat.response."
+      - topic: "game.tictactoe.state"
+        description: "Structured snapshots of the tictactoe game (board, current turn, winner). Use as context when answering the player."
     config_overrides:
       model: "ollama/gemma4:e4b"
       response_topic: "chat.response"
@@ -32,6 +42,6 @@ nodes:
 
   - type: tictactoe
     name: tictactoe
-    description: "Tic-tac-toe game. Human plays X, the LLM plays O by default."
+    description: "Tic-tac-toe game. Human plays X, the LLM plays O. Narrates events on game.tictactoe.event."
     priority: 4
     position: { x: 750, y: 300 }

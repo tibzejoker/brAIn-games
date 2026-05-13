@@ -1,15 +1,22 @@
 # hangman — play hangman against the LLM through chat.
 #
-# Topology:
-#   chat ──chat.input──▶ brain ──game.hangman.command──▶ hangman
-#                       brain ◀──chat.response──── hangman ──▶ chat
+# Topology (the brain is the gateway BOTH ways):
 #
-# How it plays: say "let's play hangman" in chat → the brain detects
-# the intent and publishes {"action":"start"} on game.hangman.command.
-# After that, single letters or full-length guesses you type land
-# directly on chat.input — hangman subscribes to chat.input itself
-# during an active game, so the brain doesn't have to relay each
-# letter. Every state change is narrated on chat.response.
+#   chat ──chat.input──▶ brain ──game.hangman.command──▶ hangman
+#                       brain ◀──game.hangman.event──── hangman
+#                       brain ──chat.response──▶ chat
+#
+# Forward path: say "let's play hangman" → the brain publishes
+# {"action":"start"} on game.hangman.command, hangman starts a round.
+# Each letter you type is forwarded by the brain as
+# {"action":"guess","value":"a"} on the same command channel.
+#
+# Reverse path: hangman emits narrative events on game.hangman.event
+# (plain text — "You guessed A — 5 lives left.") and structured state
+# snapshots on game.hangman.state (JSON, for monitoring panels only —
+# NOT subscribed by the chat to avoid JSON dumps). The brain
+# subscribes to game.hangman.event and relays in natural language on
+# chat.response.
 
 nodes:
   - type: chat
@@ -17,17 +24,21 @@ nodes:
     description: "Chat UI — say 'let's play hangman' to start, then type letters."
     priority: 5
     position: { x: 50, y: 300 }
-    subscriptions:
-      - topic: "chat.response"
-      - topic: "game.hangman.state"
+    # chat keeps its default subs (chat.response, chat.response.*,
+    # chat.input). game.hangman.state stays OUT of the chat — raw
+    # JSON belongs in a monitoring panel, not the chat surface.
 
   - type: brain
     name: consciousness
-    description: "Detects 'play hangman' intent, drives game.hangman.command."
+    description: "NLU gateway. Forwards user input to hangman, relays hangman's events back to the chat."
     priority: 10
     position: { x: 400, y: 300 }
     subscriptions:
       - topic: "chat.input"
+      - topic: "game.hangman.event"
+        description: "Narrative events from the hangman game — paraphrase or quote on chat.response."
+      - topic: "game.hangman.state"
+        description: "Structured snapshots of the hangman game (status, lives, masked word). Use as context when answering the player."
     config_overrides:
       model: "ollama/gemma4:e4b"
       response_topic: "chat.response"
@@ -35,6 +46,6 @@ nodes:
 
   - type: hangman
     name: hangman
-    description: "Hangman game. Picks words, scores guesses, narrates the gallows."
+    description: "Hangman game. Picks words, scores guesses, narrates the gallows on game.hangman.event."
     priority: 4
     position: { x: 750, y: 300 }

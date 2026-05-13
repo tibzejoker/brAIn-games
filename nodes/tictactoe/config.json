@@ -1,6 +1,6 @@
 {
   "name": "tictactoe",
-  "description": "Tic-tac-toe (morpion) game service. Human plays X by default, the LLM plays O. Every interaction — starting a round, quitting, and EVERY move — comes in on `game.tictactoe.command` with content either a JSON `{action, mark?, cell?}` or a loose string. Recognised actions: `start` (optionally with `mark: 'X'|'O'`), `quit`, `status`, and `move` (the numpad-indexed cell 1-9 in `cell`). Examples — content=`{\"action\":\"start\"}`, `{\"action\":\"move\",\"cell\":5}`, or loose strings like `start O` / `move 5`. The board is numpad-indexed 1-9 (1=top-left, 5=center, 9=bottom-right). Narrates every state change on `chat.response` so every connected chat surface stays in sync.",
+  "description": "Tic-tac-toe (morpion) game service. Human plays X by default, the LLM plays O. Every interaction — starting a round, quitting, and EVERY move — comes in on `game.tictactoe.command` with content either a JSON `{action, mark?, cell?}` or a loose string. Recognised actions: `start` (optionally with `mark: 'X'|'O'`), `quit`, `status`, and `move` (the numpad-indexed cell 1-9 in `cell`). Examples — content=`{\"action\":\"start\"}`, `{\"action\":\"move\",\"cell\":5}`, or loose strings like `start O` / `move 5`. The board is numpad-indexed 1-9 (1=top-left, 5=center, 9=bottom-right). The game emits narrative events on `game.tictactoe.event` (plain text — 'You played cell 5.', 'O played cell 9, you lost.', etc.) and structured state snapshots on `game.tictactoe.state` (JSON). The brain node subscribes to game.tictactoe.event and relays it to the user on chat.response — the game itself does NOT speak to the chat directly.",
   "tags": ["game", "tictactoe", "morpion", "llm"],
   "default_authority": 0,
   "default_priority": 4,
@@ -11,7 +11,7 @@
     }
   ],
   "default_publishes": [
-    "chat.response",
+    "game.tictactoe.event",
     "game.tictactoe.state"
   ],
   "has_ui": true,
