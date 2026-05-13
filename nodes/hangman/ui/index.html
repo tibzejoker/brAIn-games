@@ -322,26 +322,21 @@
       const guess = input.trim();
       if (!guess) return;
       try {
-        // Two publishes:
-        //  1. chat.input (with is_game_move:true) so the guess shows up in
-        //     the chat surface as the user's own turn. The brain filters
-        //     is_game_move=true messages, so this won't re-trigger NLU.
-        //  2. game.hangman.command {action:"guess", value} so the hangman
-        //     node actually processes it. Hangman only listens on its
-        //     command topic — it does NOT subscribe to chat.input — so
-        //     without this second publish the guess would never reach it.
+        // The player's guess goes on chat.input — same path as typing
+        // in the main chat. The brain (sole NLU gateway) sees it, sees
+        // the active game state, and routes to game.hangman.command via
+        // its tool catalog. The UI must NOT bypass the brain.
         await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             topic: 'chat.input',
             content: guess,
-            from: 'system.hangman-ui',
+            from: 'hangman-ui',
             criticality: 3,
-            metadata: { platform: 'web', sender: 'you', is_game_move: true },
+            metadata: { platform: 'web', sender: 'you' },
           }),
         });
-        await sendCommand('guess', { value: guess });
       } catch (e) {
         addNarration(`UI error: ${e.message}`);
       }

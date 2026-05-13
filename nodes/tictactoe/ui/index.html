@@ -308,14 +308,10 @@
 
     async function sendCellPick(cell) {
       try {
-        // Two publishes:
-        //  1. chat.input (with is_game_move:true) so the move shows up in
-        //     the chat surface as the user's turn. The brain filters
-        //     is_game_move=true messages, so this won't re-trigger NLU.
-        //  2. game.tictactoe.command {action:"move", cell} so the game
-        //     node actually processes it. Tictactoe only listens on its
-        //     command topic — it does NOT subscribe to chat.input — so
-        //     without this second publish the move would never reach it.
+        // The player's move goes on chat.input — same path as typing
+        // in the main chat. The brain (sole NLU gateway) sees it, sees
+        // the active game state, and routes to game.tictactoe.command
+        // via its tool catalog. The UI must NOT bypass the brain.
         const cellNum = cell + 1;
         await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
           method: 'POST',
@@ -323,12 +319,11 @@
           body: JSON.stringify({
             topic: 'chat.input',
             content: String(cellNum),
-            from: 'system.tictactoe-ui',
+            from: 'tictactoe-ui',
             criticality: 3,
-            metadata: { platform: 'web', sender: 'you', is_game_move: true },
+            metadata: { platform: 'web', sender: 'you' },
           }),
         });
-        await sendCommand('move', { cell: cellNum });
       } catch (e) { addNarration(`UI error: ${e.message}`); }
     }
 
