@@ -321,25 +321,11 @@
     async function sendGuess(input) {
       const guess = input.trim();
       if (!guess) return;
-      try {
-        // The player's guess goes on chat.input — same path as typing
-        // in the main chat. The brain (sole NLU gateway) sees it, sees
-        // the active game state, and routes to game.hangman.command via
-        // its tool catalog. The UI must NOT bypass the brain.
-        await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            topic: 'chat.input',
-            content: guess,
-            from: 'hangman-ui',
-            criticality: 3,
-            metadata: { platform: 'web', sender: 'you' },
-          }),
-        });
-      } catch (e) {
-        addNarration(`UI error: ${e.message}`);
-      }
+      // The game UI knows its input is unambiguously a guess — no NLU
+      // needed. Publish straight to the game's command topic. The brain
+      // still relays the resulting event to the main chat surface, so
+      // the conversation thread sees the move + outcome there too.
+      await sendCommand('guess', { value: guess });
     }
 
     els.start.addEventListener('click', () => sendCommand('start', { theme: els.theme.value.trim() || undefined }));
