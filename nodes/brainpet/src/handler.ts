@@ -312,7 +312,9 @@ async function llmPickName(ctx: NodeContext): Promise<string> {
       },
       system: "Pick ONE short whimsical name for a virtual pet.",
       prompt: "Pick a name.",
-      maxTokens: 32,
+      // Thinking-capable local models burn tokens on reasoning before
+      // emitting the tool call — see hangman pickWord.
+      maxTokens: 256,
     });
     // Schema is permissive — local models add quotes / punctuation; we
     // strip and validate ourselves.
@@ -549,7 +551,9 @@ async function llmEpitaph(ctx: NodeContext, state: PetState, cause: string): Pro
       },
       system: "Write a SHORT tomb epitaph for the pet that just passed.",
       prompt: `Pet name: ${state.name}. Species: ${state.species}. Lived ${Math.round(ageMinutes(state))} minutes. Cause: ${cause}. Personality: ${personalityBlurb(state.personality)}.`,
-      maxTokens: 80,
+      // Thinking-capable local models need headroom for reasoning
+      // before the tool call.
+      maxTokens: 512,
     });
     const raw = String((result.args as { epitaph?: unknown }).epitaph ?? "").trim().replace(/^["']|["']$/g, "");
     if (raw) return raw;

@@ -172,13 +172,21 @@ async function pickWord(ctx: NodeContext, theme: string | null): Promise<string 
       },
       system: PICK_WORD_SYSTEM,
       prompt: userPrompt,
-      maxTokens: 64,
+      // Thinking-capable local models (gemma4) burn tokens on internal
+      // reasoning BEFORE emitting the tool call. 64 tokens isn't enough
+      // and the response gets cut off mid-thinking with no tool call at
+      // all. Give them headroom.
+      maxTokens: 512,
     });
     // Normalise + validate ourselves — keep the LLM tool schema permissive
-    // (lots of models emit TitleCase or UPPER even when told "lowercase")
-    // and apply the alphabetic-only rule in code.
-    const word = String((result.args as { word?: unknown }).word ?? "").trim().toLowerCase();
-    return /^[a-z]{4,12}$/.test(word) ? word : null;
+    // (models emit TitleCase, UPPER, accents, trailing punctuation) and
+    // apply the alphabetic-only rule in code. Strip diacritics so picks
+    // like "réseau" become "reseau" and pass.
+    const raw = String((result.args as { word?: unknown }).word ?? "")
+      .trim()
+      .normalize("NFD").replace(/[̀-ͯ]/g, "") // strip accents
+      .toLowerCase();
+    return /^[a-z]{4,12}$/.test(raw) ? raw : null;
   } catch (err) {
     ctx.log("warn", `hangman: LLM pick word failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
