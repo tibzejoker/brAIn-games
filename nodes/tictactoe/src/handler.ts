@@ -112,32 +112,50 @@ const LLM_MOVE_SYSTEM = [
   " 1 | 2 | 3",
   " 4 | 5 | 6",
   " 7 | 8 | 9",
-  "Reply with EXACTLY one digit (1-9) — the cell you choose. No words, no explanation.",
+  "Use the `pick_tictactoe_cell` tool to play — that is the only valid response.",
   "Goals (in order): win if you can in one move, block your opponent's winning move, take the center, take a corner.",
 ].join("\n");
 
 async function pickLlmMove(ctx: NodeContext, state: GameState): Promise<number> {
-  const available = emptyCells(state.board).map((i) => i + 1).join(", ");
+  const availableCells = emptyCells(state.board).map((i) => i + 1);
   const prompt = [
     `You play ${state.llm}. Opponent plays ${state.player}.`,
     "",
     "Current board:",
     renderBoard(state.board),
     "",
-    `Available cells: ${available}`,
+    `Available cells: ${availableCells.join(", ")}`,
     "Pick the best cell.",
   ].join("\n");
   try {
-    const text = await ctx.llm.text({ system: LLM_MOVE_SYSTEM, prompt, maxTokens: 8 });
-    const match = text.match(/[1-9]/);
-    if (match) {
-      const cell = parseInt(match[0], 10) - 1;
-      if (state.board[cell] === null) return cell;
-    }
+    const result = await ctx.llm.tool({
+      tool: {
+        name: "pick_tictactoe_cell",
+        description: "Pick one cell to play on the tic-tac-toe board (numpad-indexed 1-9). The cell MUST be one of the currently empty cells listed in the prompt.",
+        inputSchema: {
+          type: "object",
+          required: ["cell"],
+          additionalProperties: false,
+          properties: {
+            cell: {
+              type: "integer",
+              enum: availableCells,
+              description: "Numpad-indexed cell to play, restricted to the empty cells.",
+            },
+          },
+        },
+      },
+      system: LLM_MOVE_SYSTEM,
+      prompt,
+      maxTokens: 64,
+    });
+    const cell = Number((result.args as { cell?: unknown }).cell);
+    const idx = Number.isInteger(cell) && cell >= 1 && cell <= 9 ? cell - 1 : -1;
+    if (idx >= 0 && state.board[idx] === null) return idx;
   } catch (err) {
     ctx.log("warn", `tictactoe: LLM move failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  // Fallback (LLM picked a taken cell, junk, or threw): heuristic.
+  // Fallback (LLM picked a taken cell despite the enum, or threw): heuristic.
   return pickFallbackMove(state.board);
 }
 
