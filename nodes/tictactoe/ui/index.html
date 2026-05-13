@@ -308,23 +308,27 @@
 
     async function sendCellPick(cell) {
       try {
+        // Two publishes:
+        //  1. chat.input (with is_game_move:true) so the move shows up in
+        //     the chat surface as the user's turn. The brain filters
+        //     is_game_move=true messages, so this won't re-trigger NLU.
+        //  2. game.tictactoe.command {action:"move", cell} so the game
+        //     node actually processes it. Tictactoe only listens on its
+        //     command topic — it does NOT subscribe to chat.input — so
+        //     without this second publish the move would never reach it.
+        const cellNum = cell + 1;
         await fetch(`${apiBase}/nodes/${nodeId}/ui/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             topic: 'chat.input',
-            content: String(cell + 1),
+            content: String(cellNum),
             from: 'system.tictactoe-ui',
             criticality: 3,
-            // is_game_move tells the brain "skip me" — the game node
-            // already handles short numeric moves on chat.input, no need
-            // for the brain to butt in. We deliberately do NOT add
-            // from_game here: the game's own chat.input filter uses that
-            // tag to drop *narration* echoes, and tagging UI clicks the
-            // same way would make the handler skip the player's own move.
             metadata: { platform: 'web', sender: 'you', is_game_move: true },
           }),
         });
+        await sendCommand('move', { cell: cellNum });
       } catch (e) { addNarration(`UI error: ${e.message}`); }
     }
 
