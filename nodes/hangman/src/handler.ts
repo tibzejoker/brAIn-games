@@ -31,11 +31,16 @@ export interface GameState {
   last_guesser?: string | null;
 }
 
-export type ControlAction = "start" | "hint" | "quit" | "status";
+export type ControlAction = "start" | "hint" | "quit" | "status" | "guess";
 
 export interface ControlPayload {
   action?: ControlAction;
+  /** For action === "start": optional theme (e.g. "cuisine"). */
   theme?: string;
+  /** For action === "guess": the letter or full word to play.
+   *  classifyGuess() decides if it's a letter or a word based on the
+   *  current answer length, so the caller doesn't have to. */
+  value?: string;
 }
 
 /** Build the masked word as an array of letters or null (still hidden). */
@@ -271,15 +276,17 @@ export function parseControl(content: string | undefined, metaFallback?: Control
       const parsed = JSON.parse(raw) as ControlPayload;
       if (parsed && typeof parsed === "object" && parsed.action) return parsed;
     } catch { /* not JSON */ }
-    const m = raw.match(/^(start|hint|quit|stop|abandon|status)\b\s*(.*)$/i);
+    const m = raw.match(/^(start|hint|quit|stop|abandon|status|guess|play)\b\s*(.*)$/i);
     if (m) {
       const verb = m[1].toLowerCase();
       const action: ControlAction =
         verb === "stop" || verb === "abandon" ? "quit" :
+        verb === "play" ? "guess" :
         (verb as ControlAction);
       const rest = m[2]?.trim();
       const out: ControlPayload = { action };
       if (action === "start" && rest) out.theme = rest;
+      if (action === "guess" && rest) out.value = rest;
       return out;
     }
   }
@@ -319,37 +326,35 @@ export const handler: NodeHandler = async (ctx) => {
         publishState(ctx, ctx.state.game as GameState);
       } else if (ctrl.action === "status") {
         publishState(ctx, state);
+      } else if (ctrl.action === "guess") {
+        // Brain (or any other gateway) forwards letter / word guesses
+        // through here. classifyGuess() rejects anything that isn't a
+        // single letter or a word matching the answer length — so the
+        // brain doesn't have to think about the guess type, it just
+        // pipes the user's input verbatim.
+        if (state.status !== "playing" || !state.word) {
+          narrate(ctx, "No active game — start one first.");
+        } else {
+          const raw = (ctrl.value ?? "").trim();
+          const cls = classifyGuess(raw, state.word.length);
+          if (!cls) {
+            narrate(ctx, `\"${raw}\" isn't a valid guess — pick a single letter or a ${state.word.length}-letter word.`);
+          } else if (cls.kind === "letter") {
+            await handleLetterGuess(ctx, state, cls.value, senderOf(msg));
+          } else {
+            await handleWordGuess(ctx, state, cls.value, senderOf(msg));
+          }
+        }
       }
       continue;
     }
-
-    if (msg.topic !== "chat.input") continue;
-    // Drop our own narrations + game responses that loop back through bridges.
-    const meta = (msg.metadata ?? {}) as { from_game?: string };
-    if (meta.from_game === "hangman") continue;
-
-    const payload = msg.payload as TextPayload;
-    const raw = payload?.content?.trim();
-    if (!raw) continue;
-
-    // No natural-language trigger parsing here — the brain node is the
-    // NLU front-end of the whole network. When the user says "let's
-    // play hangman about cuisine" / "donne-moi un indice" / "arrête" on
-    // any chat surface, the brain's LLM picks up the intent and
-    // publishes the right `{action, theme?}` payload on
-    // `game.hangman.command` via its `publish_message` tool. Our
-    // config.json describes the schema in plain English so the brain
-    // knows what to send.
-    //
-    // chat.input is only interpreted as a *guess* (single letter or
-    // full word matching the answer length) — and only while a game is
-    // already active. Anything else is ignored on purpose; the brain
-    // handles it.
-    if (state.status !== "playing" || !state.word) continue;
-    const cls = classifyGuess(raw, state.word.length);
-    if (!cls) continue; // ignore unrelated chat
-    if (cls.kind === "letter") await handleLetterGuess(ctx, state, cls.value, senderOf(msg));
-    else await handleWordGuess(ctx, state, cls.value, senderOf(msg));
+    // Hangman no longer listens to chat.input directly — every input
+    // (lifecycle commands AND letter/word guesses) comes in through
+    // game.hangman.command, with the brain node acting as sole NLU
+    // gateway. Removing the chat.input branch avoids the double-fire
+    // we used to get (brain answering "you typed A" while hangman
+    // simultaneously processed A as a guess). Leftover chat.input
+    // events for nodes that still subscribe to it just fall through.
   }
 };
 

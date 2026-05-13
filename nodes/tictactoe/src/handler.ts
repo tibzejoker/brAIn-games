@@ -22,11 +22,15 @@ export interface GameState {
   move_count: number;
 }
 
-export type ControlAction = "start" | "quit" | "status";
+export type ControlAction = "start" | "quit" | "status" | "move";
 
 export interface ControlPayload {
   action?: ControlAction;
+  /** For action === "start": which mark the human plays (X or O). */
   mark?: Mark;
+  /** For action === "move": the numpad-indexed cell (1-9). Accepted
+   *  either as the number itself or as a string. */
+  cell?: number | string;
 }
 
 const WIN_LINES: readonly (readonly [number, number, number])[] = [
@@ -244,15 +248,17 @@ export function parseControl(content: string | undefined, metaFallback?: Control
       const parsed = JSON.parse(raw) as ControlPayload;
       if (parsed && typeof parsed === "object" && parsed.action) return parsed;
     } catch { /* not JSON */ }
-    const m = raw.match(/^(start|quit|stop|abandon|status)\b\s*(.*)$/i);
+    const m = raw.match(/^(start|quit|stop|abandon|status|move|play)\b\s*(.*)$/i);
     if (m) {
       const verb = m[1].toLowerCase();
       const action: ControlAction =
         verb === "stop" || verb === "abandon" ? "quit" :
+        verb === "play" ? "move" :
         (verb as ControlAction);
       const rest = m[2]?.trim().toUpperCase();
       const out: ControlPayload = { action };
       if (action === "start" && (rest === "X" || rest === "O")) out.mark = rest;
+      if (action === "move" && rest) out.cell = rest;
       return out;
     }
   }
@@ -274,23 +280,26 @@ export const handler: NodeHandler = async (ctx) => {
         publishState(ctx, ctx.state.game as GameState);
       } else if (ctrl.action === "status") {
         publishState(ctx, state);
+      } else if (ctrl.action === "move") {
+        if (state.status !== "playing") {
+          narrate(ctx, "No active game — start one first.");
+        } else {
+          const raw = String(ctrl.cell ?? "").trim();
+          const cell = parseCell(raw);
+          if (cell === null) {
+            narrate(ctx, `\"${raw}\" isn't a valid cell — pick a digit 1-9 (numpad layout).`);
+          } else {
+            await handlePlayerMove(ctx, state, cell);
+          }
+        }
       }
       continue;
     }
-
-    if (msg.topic !== "chat.input") continue;
-    // Skip our own narrations that loop back through bridges.
-    const meta = (msg.metadata ?? {}) as { from_game?: string };
-    if (meta.from_game === "tictactoe") continue;
-
-    if (state.status !== "playing") continue;
-
-    const payload = msg.payload as TextPayload;
-    const raw = payload?.content?.trim();
-    if (!raw) continue;
-    const cell = parseCell(raw);
-    if (cell === null) continue; // unrelated chat
-    await handlePlayerMove(ctx, state, cell);
+    // Tictactoe no longer listens to chat.input directly — every cell
+    // pick comes through game.tictactoe.command with the brain as the
+    // sole NLU gateway. Avoids the double-fire problem where a "5"
+    // typed during a game would land on both the brain (LLM call for
+    // nothing) and on tictactoe.
   }
 };
 

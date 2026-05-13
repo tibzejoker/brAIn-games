@@ -1,17 +1,13 @@
 {
   "name": "hangman",
-  "description": "Hangman game service. To start / hint / quit a game, publish on `game.hangman.command` with content either a JSON `{action, theme?}` (preferred) or a loose string. Recognised commands: `start` (optional theme = anything, e.g. 'cuisine', 'animals', 'star wars'), `hint`, `quit`, `status`. Examples — content=`{\"action\":\"start\",\"theme\":\"cuisine\"}` or content=`start cuisine`. Letter / full-word guesses arrive on `chat.input` automatically during an active game (single letter, or word of matching length); the brain doesn't need to forward those. The game narrates every event on `chat.response` so every connected chat surface stays in sync.",
+  "description": "Hangman game service. Every interaction — starting a round, asking for a hint, quitting, and EVERY letter / word guess — comes in on `game.hangman.command` with content either a JSON `{action, theme?, value?}` (preferred) or a loose string. Recognised actions: `start` (optional theme = anything, e.g. 'cuisine', 'animals', 'star wars'), `hint`, `quit`, `status`, and `guess` (the letter / full word to play in `value`). Examples — content=`{\"action\":\"start\",\"theme\":\"cuisine\"}`, `{\"action\":\"guess\",\"value\":\"a\"}`, or loose strings like `start cuisine` / `guess a`. The game narrates every event on `chat.response` so every connected chat surface stays in sync.",
   "tags": ["game", "hangman", "llm"],
   "default_authority": 0,
   "default_priority": 4,
   "default_subscriptions": [
     {
-      "topic": "chat.input",
-      "description": "During an active game, single letters become letter guesses and full words matching the answer length become full-word guesses. Outside a game, plain text is ignored — the brain decides when to start a game and uses game.hangman.command instead."
-    },
-    {
       "topic": "game.hangman.command",
-      "description": "Hangman game control plane. Publish a JSON `{action, theme?}` payload to drive the game. Use `{\"action\":\"start\"}` to start a fresh game (optionally `{\"action\":\"start\",\"theme\":\"cuisine\"}` for a themed word), `{\"action\":\"hint\"}` for a clue, `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish the current game state. This is how the brain (or the UI) starts / hints / ends games on the player's behalf when the player asks in natural language on chat.input."
+      "description": "Sole entry point for the game. Publish `{\"action\":\"start\"}` (optionally with `theme`) to start a round, `{\"action\":\"hint\"}` for a clue, `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish the current state. To play a letter / full-word guess: `{\"action\":\"guess\",\"value\":\"a\"}` or `{\"action\":\"guess\",\"value\":\"banana\"}` — classifier rejects anything that isn't a single letter or a word of the answer's length. The brain node should forward EVERY letter the player types here while a game is active; classification + game logic happen inside the handler."
     }
   ],
   "default_publishes": [
