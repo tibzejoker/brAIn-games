@@ -163,8 +163,9 @@ async function pickWord(ctx: NodeContext, theme: string | null): Promise<string 
           properties: {
             word: {
               type: "string",
-              pattern: "^[a-zA-Z]{4,12}$",
-              description: "The chosen word: 4 to 12 alphabetic letters, no spaces / hyphens / digits.",
+              minLength: 4,
+              maxLength: 12,
+              description: "The chosen word: 4 to 12 alphabetic letters, no spaces / hyphens / digits. Case doesn't matter.",
             },
           },
         },
@@ -173,7 +174,10 @@ async function pickWord(ctx: NodeContext, theme: string | null): Promise<string 
       prompt: userPrompt,
       maxTokens: 64,
     });
-    const word = String((result.args as { word?: unknown }).word ?? "").toLowerCase();
+    // Normalise + validate ourselves — keep the LLM tool schema permissive
+    // (lots of models emit TitleCase or UPPER even when told "lowercase")
+    // and apply the alphabetic-only rule in code.
+    const word = String((result.args as { word?: unknown }).word ?? "").trim().toLowerCase();
     return /^[a-z]{4,12}$/.test(word) ? word : null;
   } catch (err) {
     ctx.log("warn", `hangman: LLM pick word failed: ${err instanceof Error ? err.message : String(err)}`);

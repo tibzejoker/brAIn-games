@@ -131,16 +131,16 @@ async function pickLlmMove(ctx: NodeContext, state: GameState): Promise<number> 
     const result = await ctx.llm.tool({
       tool: {
         name: "pick_tictactoe_cell",
-        description: "Pick one cell to play on the tic-tac-toe board (numpad-indexed 1-9). The cell MUST be one of the currently empty cells listed in the prompt.",
+        description: `Pick one cell to play on the tic-tac-toe board (numpad-indexed 1-9). Must be one of the empty cells: ${availableCells.join(", ")}.`,
         inputSchema: {
           type: "object",
           required: ["cell"],
           additionalProperties: false,
           properties: {
+            // Permissive type — some local models emit the digit as a
+            // string. We coerce + validate against availableCells below.
             cell: {
-              type: "integer",
-              enum: availableCells,
-              description: "Numpad-indexed cell to play, restricted to the empty cells.",
+              description: `Numpad-indexed cell (1-9). Must be one of: ${availableCells.join(", ")}.`,
             },
           },
         },

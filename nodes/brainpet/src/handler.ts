@@ -303,8 +303,9 @@ async function llmPickName(ctx: NodeContext): Promise<string> {
           properties: {
             name: {
               type: "string",
-              pattern: "^[A-Za-z][A-Za-z'-]{1,8}$",
-              description: "The chosen name: 2-9 chars, starts with a letter, may contain ' or -. Examples: Pip, Whisker, Bobo, Pixel, Maru, Nori.",
+              minLength: 2,
+              maxLength: 12,
+              description: "The chosen name: 2-9 letters, examples: Pip, Whisker, Bobo, Pixel, Maru, Nori. Apostrophes/hyphens allowed.",
             },
           },
         },
@@ -313,7 +314,12 @@ async function llmPickName(ctx: NodeContext): Promise<string> {
       prompt: "Pick a name.",
       maxTokens: 32,
     });
-    const raw = String((result.args as { name?: unknown }).name ?? "").trim();
+    // Schema is permissive — local models add quotes / punctuation; we
+    // strip and validate ourselves.
+    const raw = String((result.args as { name?: unknown }).name ?? "")
+      .trim()
+      .replace(/^["'`]+|["'`.,!?]+$/g, "")
+      .trim();
     if (/^[A-Za-z][A-Za-z'-]{1,8}$/.test(raw)) {
       return raw.slice(0, 1).toUpperCase() + raw.slice(1).toLowerCase();
     }
