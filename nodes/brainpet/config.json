@@ -1,17 +1,13 @@
 {
   "name": "brainpet",
-  "description": "A persistent virtual pet driven by its own LLM. Talk to it on chat.input (mention its name, or use one of the quick verbs feed / play / cuddle / clean / sleep / wake) and the pet's LLM reacts in character + decides what its stats do. Stats (hunger, happiness, energy, cleanliness, bond) decay between interactions; the node schedules its next autonomous tick dynamically based on the stat closest to crossing a threshold. Death is real — if the pet starves it goes to the cemetery (`brainpet.cemetery`) with a LLM-generated epitaph. Drive everything via natural chat or via `brainpet.command` with JSON `{action, ...}` — accepted actions: talk {text}, feed [food], play, cuddle, clean, sleep, wake, rename {name}, kill, revive, status.",
+  "description": "A persistent virtual pet driven by its own LLM. Every interaction comes in on `brainpet.command` with JSON `{action, ...}` or a loose string. Accepted actions: `talk {text}` (conversational message — the pet's LLM replies in character + applies stat effects), `feed [food]`, `play`, `cuddle`, `clean`, `sleep`, `wake`, `rename {name}`, `kill`, `revive`, `status`. Stats (hunger, happiness, energy, cleanliness, bond) decay between interactions; the node schedules its next autonomous tick dynamically based on the stat closest to crossing a threshold. Death is real — if the pet starves it goes to the cemetery (`brainpet.cemetery`) with an LLM-generated epitaph. The brain node is the network's NLU gateway: when the user mentions the pet's name in chat or says something like 'feed' / 'play', the brain forwards it here as the right action.",
   "tags": ["game", "pet", "tamagotchi", "persistent", "llm"],
   "default_authority": 0,
   "default_priority": 4,
   "default_subscriptions": [
     {
-      "topic": "chat.input",
-      "description": "Two ways to interact: (1) mention the pet's name anywhere in your message → the pet's LLM replies in character + applies stat effects; (2) single-word verb (feed / play / pet / cuddle / clean / sleep / wake) → immediate care action."
-    },
-    {
       "topic": "brainpet.command",
-      "description": "Pet control plane. Publish JSON `{action, ...}` or a loose string. Accepted actions: talk {text}, feed [food], play, cuddle, clean, sleep, wake, rename {name}, kill, revive, status."
+      "description": "Sole entry point for the pet. Publish JSON `{action, ...}` or a loose string. `talk {text}` runs the pet's LLM in character against the user's message; `feed [food]` / `play` / `cuddle` / `clean` / `sleep` / `wake` are immediate care actions; `rename {name}` / `kill` / `revive` / `status` are lifecycle. The brain should forward user chat here — mentions of the pet's name or care verbs map to the matching action."
     }
   ],
   "default_publishes": [

@@ -1,14 +1,15 @@
 # brainpet — a persistent tamagotchi-style pet driven by its own LLM.
 #
-# No brain orchestrator needed — brainpet subscribes to chat.input
-# directly, replies on chat.response (just the LLM-generated text via
-# its narrate() helper), and decays / evolves its stats autonomously
-# between interactions. Death is permanent: if it starves, an epitaph
-# lands on brainpet.cemetery — that channel is for monitoring panels,
-# NOT for the chat surface (it carries the raw cemetery JSON).
+# The brain is the network's sole NLU gateway: it reads chat.input,
+# decides whether the user is talking to the pet (mention of the name,
+# or care verbs like feed / play / cuddle), then forwards on
+# brainpet.command with the matching action ({action: "talk", text}
+# or {action: "feed"} etc.). Brainpet's own LLM crafts the in-character
+# reply on chat.response.
 #
-# Try in chat: "hi <petname>", "feed", "play", "cuddle", "sleep" —
-# or natural language like "you look hungry, here's some food".
+# brainpet.state / brainpet.cemetery carry raw JSON for dedicated
+# panels — NOT subscribed by the chat to avoid dumping state objects
+# into the chat surface.
 
 nodes:
   - type: chat
@@ -18,11 +19,22 @@ nodes:
     position: { x: 50, y: 300 }
     # chat keeps its default subscriptions (chat.response,
     # chat.response.*, chat.input). brainpet.state / brainpet.cemetery
-    # are intentionally NOT subscribed here — they carry raw state
-    # JSON meant for a dedicated pet panel, not for chat display.
+    # stay out on purpose.
+
+  - type: brain
+    name: consciousness
+    description: "NLU gateway. Routes user chat to brainpet.command."
+    priority: 10
+    position: { x: 400, y: 300 }
+    subscriptions:
+      - topic: "chat.input"
+    config_overrides:
+      model: "ollama/gemma4:e4b"
+      response_topic: "chat.response"
+      max_steps: 4
 
   - type: brainpet
     name: pet
     description: "Persistent virtual pet. Drives its own LLM, decays stats, can die."
     priority: 4
-    position: { x: 450, y: 300 }
+    position: { x: 750, y: 300 }
