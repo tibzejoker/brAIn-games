@@ -292,14 +292,30 @@ export function parseControl(content: string | undefined, metaFallback?: Control
 
 async function llmPickName(ctx: NodeContext): Promise<string> {
   try {
-    const text = await ctx.llm.text({
-      system: "Pick ONE short whimsical name for a virtual pet. Reply with the name only — 2 to 9 letters, no quotes, no punctuation, no explanation. Examples: Pip, Whisker, Bobo, Pixel, Maru, Nori.",
+    const result = await ctx.llm.tool({
+      tool: {
+        name: "pick_pet_name",
+        description: "Pick exactly one whimsical name for a new virtual pet.",
+        inputSchema: {
+          type: "object",
+          required: ["name"],
+          additionalProperties: false,
+          properties: {
+            name: {
+              type: "string",
+              pattern: "^[A-Za-z][A-Za-z'-]{1,8}$",
+              description: "The chosen name: 2-9 chars, starts with a letter, may contain ' or -. Examples: Pip, Whisker, Bobo, Pixel, Maru, Nori.",
+            },
+          },
+        },
+      },
+      system: "Pick ONE short whimsical name for a virtual pet.",
       prompt: "Pick a name.",
-      maxTokens: 12,
+      maxTokens: 32,
     });
-    if (text) {
-      const match = text.trim().match(/[A-Za-z][A-Za-z'-]{1,8}/);
-      if (match) return match[0].slice(0, 1).toUpperCase() + match[0].slice(1).toLowerCase();
+    const raw = String((result.args as { name?: unknown }).name ?? "").trim();
+    if (/^[A-Za-z][A-Za-z'-]{1,8}$/.test(raw)) {
+      return raw.slice(0, 1).toUpperCase() + raw.slice(1).toLowerCase();
     }
   } catch (err) {
     ctx.log("warn", `brainpet: llmPickName failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -507,12 +523,30 @@ export function parseReplyAndEffects(raw: string): { reply: string; effects: Rec
 
 async function llmEpitaph(ctx: NodeContext, state: PetState, cause: string): Promise<string> {
   try {
-    const text = await ctx.llm.text({
-      system: "Write a SHORT tomb epitaph (one sentence, max 14 words) for the pet that just passed. Tender, kind, no clichés. Plain prose only — no quotes.",
+    const result = await ctx.llm.tool({
+      tool: {
+        name: "write_pet_epitaph",
+        description: "Write one short epitaph for the pet that just passed.",
+        inputSchema: {
+          type: "object",
+          required: ["epitaph"],
+          additionalProperties: false,
+          properties: {
+            epitaph: {
+              type: "string",
+              minLength: 1,
+              maxLength: 140,
+              description: "One sentence, max 14 words, tender, kind, no clichés. Plain prose only — no surrounding quotes.",
+            },
+          },
+        },
+      },
+      system: "Write a SHORT tomb epitaph for the pet that just passed.",
       prompt: `Pet name: ${state.name}. Species: ${state.species}. Lived ${Math.round(ageMinutes(state))} minutes. Cause: ${cause}. Personality: ${personalityBlurb(state.personality)}.`,
-      maxTokens: 48,
+      maxTokens: 80,
     });
-    if (text) return text.trim().replace(/^["']|["']$/g, "");
+    const raw = String((result.args as { epitaph?: unknown }).epitaph ?? "").trim().replace(/^["']|["']$/g, "");
+    if (raw) return raw;
   } catch { /* ignore */ }
   return `Here lies ${state.name}. Gone too soon.`;
 }
