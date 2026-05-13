@@ -316,7 +316,8 @@ async function llmPickName(ctx: NodeContext): Promise<string> {
     });
     // Schema is permissive — local models add quotes / punctuation; we
     // strip and validate ourselves.
-    const raw = String((result.args as { name?: unknown }).name ?? "")
+    const args = result as { name?: unknown };
+    const raw = String(args.name ?? "")
       .trim()
       .replace(/^["'`]+|["'`.,!?]+$/g, "")
       .trim();
@@ -551,7 +552,8 @@ async function llmEpitaph(ctx: NodeContext, state: PetState, cause: string): Pro
       prompt: `Pet name: ${state.name}. Species: ${state.species}. Lived ${Math.round(ageMinutes(state))} minutes. Cause: ${cause}. Personality: ${personalityBlurb(state.personality)}.`,
       // No explicit cap — let the model think.
     });
-    const raw = String((result.args as { epitaph?: unknown }).epitaph ?? "").trim().replace(/^["']|["']$/g, "");
+    const args = result as { epitaph?: unknown };
+    const raw = String(args.epitaph ?? "").trim().replace(/^["']|["']$/g, "");
     if (raw) return raw;
   } catch { /* ignore */ }
   return `Here lies ${state.name}. Gone too soon.`;

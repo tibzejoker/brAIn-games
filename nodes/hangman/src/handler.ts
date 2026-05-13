@@ -179,7 +179,8 @@ async function pickWord(ctx: NodeContext, theme: string | null): Promise<string 
     // (models emit TitleCase, UPPER, accents, trailing punctuation) and
     // apply the alphabetic-only rule in code. Strip diacritics so picks
     // like "réseau" become "reseau" and pass.
-    const raw = String((result.args as { word?: unknown }).word ?? "")
+    const args = result as { word?: unknown };
+    const raw = String(args.word ?? "")
       .trim()
       .normalize("NFD").replace(/[̀-ͯ]/g, "") // strip accents
       .toLowerCase();

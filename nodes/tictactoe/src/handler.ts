@@ -150,7 +150,8 @@ async function pickLlmMove(ctx: NodeContext, state: GameState): Promise<number> 
       // No explicit cap — let thinking models reason as long as they
       // need before picking the cell.
     });
-    const cell = Number((result.args as { cell?: unknown }).cell);
+    const args = result as { cell?: unknown };
+    const cell = Number(args.cell);
     const idx = Number.isInteger(cell) && cell >= 1 && cell <= 9 ? cell - 1 : -1;
     if (idx >= 0 && state.board[idx] === null) return idx;
   } catch (err) {
