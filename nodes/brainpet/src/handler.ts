@@ -6,13 +6,9 @@ import type {
   NodeOnSpawn,
   TextPayload,
 } from "@brain/sdk";
-import { LLMRegistry, generateText } from "@brain/core";
-import { tool } from "ai";
 import { z } from "zod";
 
 // ── Tuning ──────────────────────────────────────────────────────────────
-
-const DEFAULT_MODEL = "ollama/gemma4:e4b";
 /** Per-minute decay (units / min). Positive = drains over time. */
 const DECAY: Record<StatName, number> = {
   hunger: 0.6,       // 167 min from 100 → 0 (~2h45)
@@ -289,40 +285,18 @@ export function parseControl(content: string | undefined, metaFallback?: Control
 }
 
 // ── LLM ─────────────────────────────────────────────────────────────────
-
-async function callLLM(modelName: string, system: string, user: string, signal: AbortSignal, maxOutputTokens = 80): Promise<string | null> {
-  const registry = LLMRegistry.getInstance();
-  await registry.initialize();
-  const model = registry.getModel(modelName);
-  const result = await generateText({ model, system, messages: [{ role: "user", content: user }], maxOutputTokens, abortSignal: signal });
-  const r = result as unknown as Record<string, unknown>;
-  // Reasoning models sometimes route the final answer into a separate
-  // `reasoning` channel and leave `text` empty. Try several shapes.
-  let text: string | null = null;
-  if (typeof result.text === "string" && result.text) text = result.text;
-  else if (Array.isArray(r.steps) && r.steps.length > 0) {
-    const s = r.steps[0] as Record<string, unknown>;
-    if (typeof s.text === "string" && s.text) text = s.text;
-  }
-  if (!text && typeof r.reasoning === "string") text = r.reasoning as string;
-  if (!text) return null;
-  // Strip any leftover think-out-loud tags the model might emit.
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim() || null;
-}
-
-function modelFor(ctx: NodeContext): string {
-  return (ctx.node.config_overrides?.model as string | undefined) ?? DEFAULT_MODEL;
-}
+// All LLM I/O routes through ctx.llm.* — the framework handles model
+// resolution (per-node override → global default → fallback chain),
+// reasoning-text extraction, <think>-tag stripping, and per-provider
+// failover. This handler only declares WHAT it wants.
 
 async function llmPickName(ctx: NodeContext): Promise<string> {
   try {
-    const text = await callLLM(
-      modelFor(ctx),
-      "Pick ONE short whimsical name for a virtual pet. Reply with the name only — 2 to 9 letters, no quotes, no punctuation, no explanation. Examples: Pip, Whisker, Bobo, Pixel, Maru, Nori.",
-      "Pick a name.",
-      ctx.signal,
-      12,
-    );
+    const text = await ctx.llm.text({
+      system: "Pick ONE short whimsical name for a virtual pet. Reply with the name only — 2 to 9 letters, no quotes, no punctuation, no explanation. Examples: Pip, Whisker, Bobo, Pixel, Maru, Nori.",
+      prompt: "Pick a name.",
+      maxTokens: 12,
+    });
     if (text) {
       const match = text.trim().match(/[A-Za-z][A-Za-z'-]{1,8}/);
       if (match) return match[0].slice(0, 1).toUpperCase() + match[0].slice(1).toLowerCase();
@@ -359,9 +333,9 @@ const REPLY_SYSTEM = (state: PetState) => [
   "6. `emojis` (optional) is your stage-direction layer. Use 0–3 emojis per reply to make the moment feel alive: a heart drifting up from a hug, sparkles popping around a clean bath, an angry ❗ over the pet's head after being hit, a 🎩 attached above the head, a 💥 expanding from impact. Be tasteful — don't spam. Coordinates are 0..1 over the pet stage; the creature sits roughly centred near (0.5, 0.55).",
 ].join("\n");
 
-const adjustStatsTool = tool({
-  description: "Apply stat changes to the pet AND deliver the pet's in-character reply, in one call. ALWAYS call this exactly once per user message. You have FULL authority over the magnitudes — a casual greeting moves stats by a few points, a violent or fatal action can drop health by tens or even crush it all the way to zero. There are no soft caps. `health` is the ONLY lethal lifebar; other stats just make the pet weaker / sadder / hungrier (which then drains health over time).",
-  inputSchema: z.object({
+const ADJUST_STATS_DESCRIPTION = "Apply stat changes to the pet AND deliver the pet's in-character reply, in one call. ALWAYS call this exactly once per user message. You have FULL authority over the magnitudes — a casual greeting moves stats by a few points, a violent or fatal action can drop health by tens or even crush it all the way to zero. There are no soft caps. `health` is the ONLY lethal lifebar; other stats just make the pet weaker / sadder / hungrier (which then drains health over time).";
+
+const adjustStatsSchema = z.object({
     reply: z.string().describe("Pet's in-character spoken reply, 1–2 short sentences, in the user's language. Even in the moment of death, a tiny final whimper is welcome."),
     happiness: z.number().min(-100).max(100).describe("Δ happiness. Light tap on the head: -3. Real insult: -15. Beating: -40. Torture / cruelty: -80 or lower. Lavish praise / great joy: +20 to +60. Not lethal on its own."),
     hunger: z.number().min(-100).max(100).describe("Δ hunger — positive when fed, negative when food is denied or food is vomited up. Hunger at 0 will gradually drain health over the next hour or so; this is NOT instant death."),
@@ -382,19 +356,7 @@ const adjustStatsTool = tool({
       count: z.number().min(1).max(10).optional().describe("How many copies to spawn (default 1); they get slight position jitter and a small stagger."),
       attached: z.boolean().optional().describe("If true, the emoji stays anchored at fromX/fromY for the full duration (good for hats, weapons, status icons hovering near the pet)."),
     })).max(8).optional().describe("0–3 emojis that visually narrate the interaction (hearts, sparkles, explosions, hats, tools…). Optional — skip on neutral exchanges."),
-  }),
 });
-
-/** Pull the first adjust_stats tool call out of an ai-sdk generateText
- *  result, looking in result.toolCalls first and falling back to nested
- *  result.steps[*].toolCalls. */
-function extractAdjustStatsCall(result: unknown): { input: Record<string, unknown> } | null {
-  const r = result as { toolCalls?: Array<{ toolName?: string; input?: unknown }>; steps?: Array<{ toolCalls?: Array<{ toolName?: string; input?: unknown }> }> };
-  const fromTop = r.toolCalls?.find((c) => c.toolName === "adjust_stats");
-  const call = fromTop ?? r.steps?.flatMap((s) => s.toolCalls ?? []).find((c) => c?.toolName === "adjust_stats");
-  if (!call || typeof call.input !== "object" || call.input === null) return null;
-  return { input: call.input as Record<string, unknown> };
-}
 
 async function llmTalk(ctx: NodeContext, state: PetState, userText: string, speaker: string): Promise<{ reply: string; effects: Record<string, number | string>; emojis: EmojiAnim[] } | null> {
   try {
@@ -415,43 +377,26 @@ async function llmTalk(ctx: NodeContext, state: PetState, userText: string, spea
     const tag = speaker && speaker !== "you" ? `${speaker} says: ` : "";
     messages.push({ role: "user", content: `${tag}${userText}` });
 
-    const registry = LLMRegistry.getInstance();
-    await registry.initialize();
-    const model = registry.getModel(modelFor(ctx));
-
-    // Tool-call mode is the ONLY way the pet talks. `toolChoice: 'required'`
-    // forces the model to emit a call to `adjust_stats` so every interaction
-    // carries both a reply and a stat-delta JSON — no risk of an empty
-    // <effects> tag silently dropping the user's action.
-    const call = await runAdjustStatsCall({ model, system: REPLY_SYSTEM(state), messages, signal: ctx.signal });
-    if (!call) {
-      // One retry with an explicit nag, in case the model emitted text only.
-      ctx.log("warn", "brainpet: no tool call returned, retrying with stricter prompt");
-      const stricter = REPLY_SYSTEM(state) + "\n\n>>> Your previous attempt did not call the tool. You MUST call `adjust_stats` exactly once. Do not reply in plain text.";
-      const retry = await runAdjustStatsCall({ model, system: stricter, messages, signal: ctx.signal });
-      if (!retry) return null;
-      return inputToReplyEffects(retry.input);
-    }
-    return inputToReplyEffects(call.input);
+    // ctx.llm.tool() handles model resolution, failover across the chain,
+    // toolChoice:'required', retry-with-stricter-prompt on missing tool
+    // call, and schema validation. We just hand it the zod schema + the
+    // conversation and get the validated args back.
+    const input = await ctx.llm.tool({
+      tool: {
+        name: "adjust_stats",
+        description: ADJUST_STATS_DESCRIPTION,
+        inputSchema: adjustStatsSchema,
+      },
+      prompt: messages,
+      system: REPLY_SYSTEM(state),
+      maxTokens: 2048,
+      retries: 1,
+    });
+    return inputToReplyEffects(input);
   } catch (err) {
     ctx.log("warn", `brainpet: llmTalk failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
-}
-
-async function runAdjustStatsCall(args: { model: unknown; system: string; messages: { role: "user" | "assistant"; content: string }[]; signal: AbortSignal }): Promise<{ input: Record<string, unknown> } | null> {
-  const result = await generateText({
-    // The model arg is typed by ai-sdk — we treat it as any since it
-    // comes from LLMRegistry which already vended a usable handle.
-    model: args.model as never,
-    system: args.system,
-    messages: args.messages,
-    tools: { adjust_stats: adjustStatsTool },
-    toolChoice: "required",
-    maxOutputTokens: 2048,
-    abortSignal: args.signal,
-  });
-  return extractAdjustStatsCall(result);
 }
 
 /** Marshall the tool-call args into the shape applyEffects + narrate consume. */
@@ -562,13 +507,11 @@ export function parseReplyAndEffects(raw: string): { reply: string; effects: Rec
 
 async function llmEpitaph(ctx: NodeContext, state: PetState, cause: string): Promise<string> {
   try {
-    const text = await callLLM(
-      modelFor(ctx),
-      "Write a SHORT tomb epitaph (one sentence, max 14 words) for the pet that just passed. Tender, kind, no clichés. Plain prose only — no quotes.",
-      `Pet name: ${state.name}. Species: ${state.species}. Lived ${Math.round(ageMinutes(state))} minutes. Cause: ${cause}. Personality: ${personalityBlurb(state.personality)}.`,
-      ctx.signal,
-      48,
-    );
+    const text = await ctx.llm.text({
+      system: "Write a SHORT tomb epitaph (one sentence, max 14 words) for the pet that just passed. Tender, kind, no clichés. Plain prose only — no quotes.",
+      prompt: `Pet name: ${state.name}. Species: ${state.species}. Lived ${Math.round(ageMinutes(state))} minutes. Cause: ${cause}. Personality: ${personalityBlurb(state.personality)}.`,
+      maxTokens: 48,
+    });
     if (text) return text.trim().replace(/^["']|["']$/g, "");
   } catch { /* ignore */ }
   return `Here lies ${state.name}. Gone too soon.`;

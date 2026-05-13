@@ -3,10 +3,8 @@ import type {
   NodeHandler,
   TextPayload,
 } from "@brain/sdk";
-import { LLMRegistry, generateText } from "@brain/core";
 
 const MAX_LIVES = 6;
-const DEFAULT_MODEL = "ollama/gemma4:e4b";
 
 /** Canonical Hangman stick-figure stages. Index = wrong guesses so far (0 = pristine). */
 const STAGES = [
@@ -138,44 +136,12 @@ const PICK_WORD_SYSTEM = [
   "- All-lowercase in your reply",
 ].join("\n");
 
-/**
- * `ctx.callLLM` only resolves inside the dedicated LLM runner that
- * powers brain — for plain service nodes it throws "not implemented".
- * We talk to the registry directly, same way the brain handler does.
- */
-async function callLLM(
-  modelName: string,
-  system: string,
-  user: string,
-  signal: AbortSignal,
-  maxOutputTokens = 64,
-): Promise<string | null> {
-  const registry = LLMRegistry.getInstance();
-  await registry.initialize();
-  const model = registry.getModel(modelName);
-  const result = await generateText({
-    model,
-    system,
-    messages: [{ role: "user", content: user }],
-    maxOutputTokens,
-    abortSignal: signal,
-  });
-  const r = result as unknown as Record<string, unknown>;
-  if (typeof result.text === "string" && result.text) return result.text;
-  if (Array.isArray(r.steps) && r.steps.length > 0) {
-    const s = r.steps[0] as Record<string, unknown>;
-    if (typeof s.text === "string") return s.text;
-  }
-  return null;
-}
-
 async function pickWord(ctx: NodeContext, theme: string | null): Promise<string | null> {
-  const model = (ctx.node.config_overrides?.model as string | undefined) ?? DEFAULT_MODEL;
   const userPrompt = theme
     ? `Pick a Hangman word about: ${theme}.`
     : `Pick any interesting Hangman word.`;
   try {
-    const text = await callLLM(model, PICK_WORD_SYSTEM, userPrompt, ctx.signal);
+    const text = await ctx.llm.text({ system: PICK_WORD_SYSTEM, prompt: userPrompt, maxTokens: 64 });
     if (!text) return null;
     const match = text.trim().toLowerCase().match(/[a-z]{4,12}/);
     return match ? match[0] : null;
@@ -187,7 +153,6 @@ async function pickWord(ctx: NodeContext, theme: string | null): Promise<string 
 
 async function pickHint(ctx: NodeContext, state: GameState): Promise<string | null> {
   if (!state.word) return null;
-  const model = (ctx.node.config_overrides?.model as string | undefined) ?? DEFAULT_MODEL;
   const masked = renderMasked(state.word, state.tried);
   const system = [
     "You are a Hangman hint assistant.",
@@ -195,13 +160,12 @@ async function pickHint(ctx: NodeContext, state: GameState): Promise<string | nu
     "Two sentences max. Never mention any letter of the word.",
   ].join("\n");
   try {
-    const text = await callLLM(
-      model, system,
-      `Word (hidden, do NOT echo): ${state.word}\nMasked so far: ${masked}\nTheme: ${state.theme ?? "any"}\nGive one hint.`,
-      ctx.signal,
-      120,
-    );
-    return text?.trim() || null;
+    const text = await ctx.llm.text({
+      system,
+      prompt: `Word (hidden, do NOT echo): ${state.word}\nMasked so far: ${masked}\nTheme: ${state.theme ?? "any"}\nGive one hint.`,
+      maxTokens: 120,
+    });
+    return text.trim() || null;
   } catch (err) {
     ctx.log("warn", `hangman: LLM hint failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;

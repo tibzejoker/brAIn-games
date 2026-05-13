@@ -3,9 +3,7 @@ import type {
   NodeHandler,
   TextPayload,
 } from "@brain/sdk";
-import { LLMRegistry, generateText } from "@brain/core";
 
-const DEFAULT_MODEL = "ollama/gemma4:e4b";
 
 export type Mark = "X" | "O";
 export type Cell = Mark | null;
@@ -114,34 +112,7 @@ const LLM_MOVE_SYSTEM = [
   "Goals (in order): win if you can in one move, block your opponent's winning move, take the center, take a corner.",
 ].join("\n");
 
-async function callLLM(
-  modelName: string,
-  system: string,
-  user: string,
-  signal: AbortSignal,
-  maxOutputTokens = 8,
-): Promise<string | null> {
-  const registry = LLMRegistry.getInstance();
-  await registry.initialize();
-  const model = registry.getModel(modelName);
-  const result = await generateText({
-    model,
-    system,
-    messages: [{ role: "user", content: user }],
-    maxOutputTokens,
-    abortSignal: signal,
-  });
-  const r = result as unknown as Record<string, unknown>;
-  if (typeof result.text === "string" && result.text) return result.text;
-  if (Array.isArray(r.steps) && r.steps.length > 0) {
-    const s = r.steps[0] as Record<string, unknown>;
-    if (typeof s.text === "string") return s.text;
-  }
-  return null;
-}
-
 async function pickLlmMove(ctx: NodeContext, state: GameState): Promise<number> {
-  const model = (ctx.node.config_overrides?.model as string | undefined) ?? DEFAULT_MODEL;
   const available = emptyCells(state.board).map((i) => i + 1).join(", ");
   const prompt = [
     `You play ${state.llm}. Opponent plays ${state.player}.`,
@@ -153,8 +124,8 @@ async function pickLlmMove(ctx: NodeContext, state: GameState): Promise<number> 
     "Pick the best cell.",
   ].join("\n");
   try {
-    const text = await callLLM(model, LLM_MOVE_SYSTEM, prompt, ctx.signal);
-    const match = text?.match(/[1-9]/);
+    const text = await ctx.llm.text({ system: LLM_MOVE_SYSTEM, prompt, maxTokens: 8 });
+    const match = text.match(/[1-9]/);
     if (match) {
       const cell = parseInt(match[0], 10) - 1;
       if (state.board[cell] === null) return cell;
