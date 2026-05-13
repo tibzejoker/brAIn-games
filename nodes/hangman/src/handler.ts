@@ -136,24 +136,45 @@ function narrate(ctx: NodeContext, text: string): void {
   });
 }
 
+// We don't ask the LLM for free text — we hand it a single tool with a
+// strict schema and let ai-sdk validate. That way `pick_hangman_word`
+// can ONLY emit a valid 4–12 letter alphabetic word; if the model
+// would have replied with a sentence, ai-sdk forces it through the
+// tool shape instead. No regex extraction, no half-parsed fallbacks.
 const PICK_WORD_SYSTEM = [
-  "You are picking ONE word for a Hangman game.",
-  "Reply with EXACTLY the word — no quotes, no punctuation, no explanation.",
-  "Constraints:",
-  "- 4 to 12 letters, English only, alphabetic only (no spaces, no hyphens, no digits)",
-  "- Common-enough that a fluent English speaker can recognise it",
-  "- All-lowercase in your reply",
+  "You are picking ONE word for a Hangman round.",
+  "The word must be common-enough that a fluent English speaker recognises it.",
+  "Use the `pick_hangman_word` tool — that is the only valid response.",
 ].join("\n");
 
 async function pickWord(ctx: NodeContext, theme: string | null): Promise<string | null> {
   const userPrompt = theme
-    ? `Pick a Hangman word about: ${theme}.`
-    : `Pick any interesting Hangman word.`;
+    ? `A new Hangman round is starting. Pick ONE good word about: ${theme}.`
+    : `A new Hangman round is starting. Pick ONE interesting word.`;
   try {
-    const text = await ctx.llm.text({ system: PICK_WORD_SYSTEM, prompt: userPrompt, maxTokens: 64 });
-    if (!text) return null;
-    const match = text.trim().toLowerCase().match(/[a-z]{4,12}/);
-    return match ? match[0] : null;
+    const result = await ctx.llm.tool({
+      tool: {
+        name: "pick_hangman_word",
+        description: "Pick exactly one word for the upcoming Hangman round.",
+        inputSchema: {
+          type: "object",
+          required: ["word"],
+          additionalProperties: false,
+          properties: {
+            word: {
+              type: "string",
+              pattern: "^[a-zA-Z]{4,12}$",
+              description: "The chosen word: 4 to 12 alphabetic letters, no spaces / hyphens / digits.",
+            },
+          },
+        },
+      },
+      system: PICK_WORD_SYSTEM,
+      prompt: userPrompt,
+      maxTokens: 64,
+    });
+    const word = String((result.args as { word?: unknown }).word ?? "").toLowerCase();
+    return /^[a-z]{4,12}$/.test(word) ? word : null;
   } catch (err) {
     ctx.log("warn", `hangman: LLM pick word failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
