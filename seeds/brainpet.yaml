@@ -1,0 +1,26 @@
+# brainpet — a persistent tamagotchi-style pet driven by its own LLM.
+#
+# No brain orchestrator needed — brainpet subscribes to chat.input
+# directly, replies on chat.response, and decays / evolves its stats
+# autonomously between interactions. Death is permanent: if it
+# starves, an epitaph lands on brainpet.cemetery.
+#
+# Try in chat: "hi <petname>", "feed", "play", "cuddle", "sleep" —
+# or natural language like "you look hungry, here's some food".
+
+nodes:
+  - type: chat
+    name: human
+    description: "Chat UI — talk to the pet, see it react."
+    priority: 5
+    position: { x: 50, y: 300 }
+    subscriptions:
+      - topic: "chat.response"
+      - topic: "brainpet.state"
+      - topic: "brainpet.cemetery"
+
+  - type: brainpet
+    name: pet
+    description: "Persistent virtual pet. Drives its own LLM, decays stats, can die."
+    priority: 4
+    position: { x: 450, y: 300 }

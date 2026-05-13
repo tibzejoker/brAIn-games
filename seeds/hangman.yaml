@@ -1,0 +1,40 @@
+# hangman — play hangman against the LLM through chat.
+#
+# Topology:
+#   chat ──chat.input──▶ brain ──game.hangman.command──▶ hangman
+#                       brain ◀──chat.response──── hangman ──▶ chat
+#
+# How it plays: say "let's play hangman" in chat → the brain detects
+# the intent and publishes {"action":"start"} on game.hangman.command.
+# After that, single letters or full-length guesses you type land
+# directly on chat.input — hangman subscribes to chat.input itself
+# during an active game, so the brain doesn't have to relay each
+# letter. Every state change is narrated on chat.response.
+
+nodes:
+  - type: chat
+    name: human
+    description: "Chat UI — say 'let's play hangman' to start, then type letters."
+    priority: 5
+    position: { x: 50, y: 300 }
+    subscriptions:
+      - topic: "chat.response"
+      - topic: "game.hangman.state"
+
+  - type: brain
+    name: consciousness
+    description: "Detects 'play hangman' intent, drives game.hangman.command."
+    priority: 10
+    position: { x: 400, y: 300 }
+    subscriptions:
+      - topic: "chat.input"
+    config_overrides:
+      model: "ollama/gemma4:e4b"
+      response_topic: "chat.response"
+      max_steps: 4
+
+  - type: hangman
+    name: hangman
+    description: "Hangman game. Picks words, scores guesses, narrates the gallows."
+    priority: 4
+    position: { x: 750, y: 300 }

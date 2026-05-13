@@ -1,0 +1,37 @@
+# tictactoe — play morpion against the LLM through chat.
+#
+# Topology:
+#   chat ──chat.input──▶ brain ──game.tictactoe.command──▶ tictactoe
+#                       brain ◀──chat.response──── tictactoe ──▶ chat
+#
+# Say "play tictactoe" in chat → brain starts a game. During the game,
+# type a digit 1-9 (numpad layout, 1=top-left, 5=center, 9=bot-right)
+# to pick a cell — tictactoe reads it straight from chat.input.
+
+nodes:
+  - type: chat
+    name: human
+    description: "Chat UI — say 'play tictactoe' to start, then type a digit 1-9 to move."
+    priority: 5
+    position: { x: 50, y: 300 }
+    subscriptions:
+      - topic: "chat.response"
+      - topic: "game.tictactoe.state"
+
+  - type: brain
+    name: consciousness
+    description: "Detects 'play tictactoe' intent, drives game.tictactoe.command."
+    priority: 10
+    position: { x: 400, y: 300 }
+    subscriptions:
+      - topic: "chat.input"
+    config_overrides:
+      model: "ollama/gemma4:e4b"
+      response_topic: "chat.response"
+      max_steps: 4
+
+  - type: tictactoe
+    name: tictactoe
+    description: "Tic-tac-toe game. Human plays X, the LLM plays O by default."
+    priority: 4
+    position: { x: 750, y: 300 }
