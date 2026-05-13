@@ -1,9 +1,11 @@
 # brainpet — a persistent tamagotchi-style pet driven by its own LLM.
 #
 # No brain orchestrator needed — brainpet subscribes to chat.input
-# directly, replies on chat.response, and decays / evolves its stats
-# autonomously between interactions. Death is permanent: if it
-# starves, an epitaph lands on brainpet.cemetery.
+# directly, replies on chat.response (just the LLM-generated text via
+# its narrate() helper), and decays / evolves its stats autonomously
+# between interactions. Death is permanent: if it starves, an epitaph
+# lands on brainpet.cemetery — that channel is for monitoring panels,
+# NOT for the chat surface (it carries the raw cemetery JSON).
 #
 # Try in chat: "hi <petname>", "feed", "play", "cuddle", "sleep" —
 # or natural language like "you look hungry, here's some food".
@@ -14,10 +16,10 @@ nodes:
     description: "Chat UI — talk to the pet, see it react."
     priority: 5
     position: { x: 50, y: 300 }
-    subscriptions:
-      - topic: "chat.response"
-      - topic: "brainpet.state"
-      - topic: "brainpet.cemetery"
+    # chat keeps its default subscriptions (chat.response,
+    # chat.response.*, chat.input). brainpet.state / brainpet.cemetery
+    # are intentionally NOT subscribed here — they carry raw state
+    # JSON meant for a dedicated pet panel, not for chat display.
 
   - type: brainpet
     name: pet
