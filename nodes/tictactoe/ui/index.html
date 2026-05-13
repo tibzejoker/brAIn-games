@@ -282,11 +282,11 @@
           const data = JSON.parse(msg.payload.content);
           applyState(data);
         } catch { /* malformed */ }
-      } else if (msg.topic === 'chat.response') {
-        const fromGame = msg.metadata?.from_game;
-        if (fromGame === 'tictactoe' || msg.from === nodeId) {
-          addNarration(msg.payload?.content ?? '');
-        }
+      } else if (msg.topic === 'game.tictactoe.event') {
+        // Narration comes straight from the game on its own event topic.
+        // The brain also relays this to the main chat, but the game UI
+        // doesn't need to wait for that hop.
+        addNarration(msg.payload?.content ?? '');
       }
     }
 
