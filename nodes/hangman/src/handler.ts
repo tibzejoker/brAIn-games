@@ -172,11 +172,8 @@ async function pickWord(ctx: NodeContext, theme: string | null): Promise<string 
       },
       system: PICK_WORD_SYSTEM,
       prompt: userPrompt,
-      // Thinking-capable local models (gemma4) burn tokens on internal
-      // reasoning BEFORE emitting the tool call. 64 tokens isn't enough
-      // and the response gets cut off mid-thinking with no tool call at
-      // all. Give them headroom.
-      maxTokens: 512,
+      // No explicit cap — let thinking models reason as long as they
+      // need. Inherits the facade's generous default.
     });
     // Normalise + validate ourselves — keep the LLM tool schema permissive
     // (models emit TitleCase, UPPER, accents, trailing punctuation) and

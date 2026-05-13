@@ -147,9 +147,8 @@ async function pickLlmMove(ctx: NodeContext, state: GameState): Promise<number> 
       },
       system: LLM_MOVE_SYSTEM,
       prompt,
-      // Local thinking models eat tokens before emitting the tool call —
-      // see hangman pickWord. Give headroom.
-      maxTokens: 512,
+      // No explicit cap — let thinking models reason as long as they
+      // need before picking the cell.
     });
     const cell = Number((result.args as { cell?: unknown }).cell);
     const idx = Number.isInteger(cell) && cell >= 1 && cell <= 9 ? cell - 1 : -1;
