@@ -31,7 +31,7 @@
     }
   ],
   "default_publishes": [
-    "game.hangman.event",
+    "chat.response",
     "game.hangman.state"
   ],
   "has_ui": true,

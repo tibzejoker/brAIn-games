@@ -170,11 +170,11 @@ function publishState(ctx: NodeContext, state: GameState): void {
 }
 
 function narrate(ctx: NodeContext, text: string): void {
-  // Game events go to the brain via game.tictactoe.event — the brain
-  // is the sole gateway that relays to the user on chat.response.
-  // Keeps a single voice in the chat (the brain's) and stops the
-  // game from speaking around the AI.
-  ctx.publish("game.tictactoe.event", {
+  // Narration goes straight to chat.response. The brain doesn't relay
+  // game events — every chat surface already subscribes to
+  // chat.response / chat.response.*. Tagging with metadata.from_game
+  // lets surfaces filter / style game lines.
+  ctx.publish("chat.response", {
     type: "text",
     criticality: 3,
     payload: { content: text },

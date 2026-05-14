@@ -122,13 +122,12 @@ function publishState(ctx: NodeContext, state: GameState): void {
   });
 }
 
-/** Narration through chat.response — visible on every connected surface. */
+/** Narration straight to chat.response. The brain doesn't need to
+ *  relay — every chat surface (web UI, bridges, this node's own UI)
+ *  already subscribes to chat.response / chat.response.*. Tagging with
+ *  metadata.from_game lets surfaces filter / style game lines. */
 function narrate(ctx: NodeContext, text: string): void {
-  // Game events go to the brain via game.hangman.event — the brain is
-  // the sole gateway that relays to the user on chat.response. Keeps
-  // a single voice in the chat surface (the brain's), and avoids the
-  // double-fire we got when the game published on chat.response itself.
-  ctx.publish("game.hangman.event", {
+  ctx.publish("chat.response", {
     type: "text",
     criticality: 3,
     payload: { content: text },

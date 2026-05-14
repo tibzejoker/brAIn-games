@@ -292,10 +292,10 @@
           const data = JSON.parse(msg.payload.content);
           applyState(data);
         } catch { /* malformed */ }
-      } else if (msg.topic === 'game.hangman.event') {
-        // Narration comes straight from the game on its own event topic.
-        // The brain also relays this to the main chat, but the game UI
-        // doesn't need to wait for that hop.
+      } else if (msg.topic === 'chat.response' && msg.metadata?.from_game === 'hangman') {
+        // Narration arrives on chat.response (the game publishes there
+        // directly — no brain hop). Filter to our own from_game tag so
+        // we don't echo unrelated chat lines.
         addNarration(msg.payload?.content ?? '');
       }
     }
