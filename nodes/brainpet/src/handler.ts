@@ -6,6 +6,7 @@ import type {
   NodeOnSpawn,
   TextPayload,
 } from "@brain/sdk";
+import { parseTolerantJson, repairTruncatedJson as repairTruncatedJsonCore } from "@brain/core";
 import { z } from "zod";
 
 // ── Tuning ──────────────────────────────────────────────────────────────
@@ -472,30 +473,12 @@ function sanitizeEmojis(raw: unknown): EmojiAnim[] {
  *  stat-delta JSON it emits in `<effects>...</effects>`. We tolerate
  *  LLM-ish JSON quirks: `+15` (leading-plus integers aren't strict
  *  JSON but models love them), single-quoted keys, trailing commas. */
-function tolerantJsonParse(s: string): Record<string, number | string> {
-  const normalised = s
-    .replace(/:\s*\+(\d)/g, ": $1")               // `+15` → `15`
-    .replace(/,\s*([}\]])/g, "$1")                // trailing commas
-    .replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3'); // single-quoted keys
-  return JSON.parse(normalised) as Record<string, number | string>;
-}
-
-/** Best-effort JSON repair for a JSON-ish blob that was cut mid-write
- *  (model hit max_tokens before `}`). Drops the trailing partial key/value,
- *  closes braces, parses again. Returns {} on hopeless input. */
-function repairTruncatedJson(s: string): Record<string, number | string> {
-  let body = s.trim();
-  // Try direct parse first.
-  try { return tolerantJsonParse(body); } catch { /* continue */ }
-  // Strip trailing partial key/value: walk back to the last comma or `{`.
-  const stripIdx = Math.max(body.lastIndexOf(","), body.lastIndexOf("{"));
-  if (stripIdx > 0) body = body.slice(0, stripIdx);
-  // Balance braces.
-  const open = (body.match(/\{/g) ?? []).length;
-  const close = (body.match(/\}/g) ?? []).length;
-  body = body + "}".repeat(Math.max(0, open - close));
-  try { return tolerantJsonParse(body); } catch { return {}; }
-}
+// The tolerant + repairing JSON parsers were promoted to @brain/core (this
+// node was their original home). We keep these thin typed wrappers so the
+// stat-delta call sites stay terse and typed to our effects shape.
+type Effects = Record<string, number | string>;
+const tolerantJsonParse = (s: string): Effects => parseTolerantJson<Effects>(s);
+const repairTruncatedJson = (s: string): Effects => repairTruncatedJsonCore<Effects>(s);
 
 export function parseReplyAndEffects(raw: string): { reply: string; effects: Record<string, number | string> } {
   // Properly closed tag — easy path.
