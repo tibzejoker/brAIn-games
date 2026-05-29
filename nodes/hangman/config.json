@@ -1,39 +1,76 @@
 {
   "name": "hangman",
   "description": "Hangman game service. Every interaction — starting a round, asking for a hint, quitting, and EVERY letter / word guess — comes in on `game.hangman.command` with content either a JSON `{action, theme?, value?}` (preferred) or a loose string. Recognised actions: `start` (optional theme = anything, e.g. 'cuisine', 'animals', 'star wars'), `hint`, `quit`, `status`, and `guess` (the letter / full word to play in `value`). Examples — content=`{\"action\":\"start\",\"theme\":\"cuisine\"}`, `{\"action\":\"guess\",\"value\":\"a\"}`, or loose strings like `start cuisine` / `guess a`. The game emits narrative events on `game.hangman.event` (plain text — 'You guessed A! 5 lives left.', '🎉 You won!', etc.) and structured state snapshots on `game.hangman.state` (JSON). The brain node subscribes to game.hangman.event and relays it to the user on chat.response — the game itself does NOT speak to the chat directly.",
-  "tags": ["game", "hangman", "llm"],
+  "tags": [
+    "game",
+    "hangman",
+    "llm"
+  ],
   "default_authority": 0,
   "default_priority": 4,
-  "default_subscriptions": [
-    {
-      "topic": "game.hangman.command",
-      "description": "Sole entry point for the game. Publish one of: start (optionally with theme), hint, quit, status, or guess (with `value` = single letter OR full word of the answer's length). The brain node forwards every letter the player types here while a game is active; classification + game logic happen inside the handler.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "enum": ["start", "hint", "quit", "stop", "abandon", "status", "guess", "play"],
-            "description": "Which command to run. `start` begins a round, `hint` asks for a clue, `quit`/`stop`/`abandon` end it, `status` republishes current state, `guess`/`play` play a letter or word."
+  "ports": {
+    "inputs": {
+      "game.hangman.command": {
+        "description": "Sole entry point for the game. Publish one of: start (optionally with theme), hint, quit, status, or guess (with `value` = single letter OR full word of the answer's length). The brain node forwards every letter the player types here while a game is active; classification + game logic happen inside the handler.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "start",
+                "hint",
+                "quit",
+                "stop",
+                "abandon",
+                "status",
+                "guess",
+                "play"
+              ],
+              "description": "Which command to run. `start` begins a round, `hint` asks for a clue, `quit`/`stop`/`abandon` end it, `status` republishes current state, `guess`/`play` play a letter or word."
+            },
+            "theme": {
+              "type": "string",
+              "description": "Optional theme for `start` — anything ('cuisine', 'animals', 'star wars'…)."
+            },
+            "value": {
+              "type": "string",
+              "description": "Required for `guess`/`play`: a single letter (A–Z) or a full-word guess matching the answer's length."
+            }
           },
-          "theme": {
-            "type": "string",
-            "description": "Optional theme for `start` — anything ('cuisine', 'animals', 'star wars'…)."
-          },
-          "value": {
-            "type": "string",
-            "description": "Required for `guess`/`play`: a single letter (A–Z) or a full-word guess matching the answer's length."
-          }
-        },
-        "required": ["action"],
-        "additionalProperties": false
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "outputs": {
+      "chat.response": {
+        "description": "chat.response"
+      },
+      "game.hangman.state": {
+        "description": "game.hangman.state"
       }
     }
-  ],
-  "default_publishes": [
-    "chat.response",
-    "game.hangman.state"
-  ],
+  },
+  "default_port_bindings": {
+    "inputs": {
+      "game.hangman.command": [
+        "game.hangman.command"
+      ]
+    },
+    "outputs": {
+      "chat.response": [
+        "chat.response"
+      ],
+      "game.hangman.state": [
+        "game.hangman.state"
+      ]
+    }
+  },
   "has_ui": true,
-  "supports_transport": ["process"]
+  "supports_transport": [
+    "process"
+  ]
 }
