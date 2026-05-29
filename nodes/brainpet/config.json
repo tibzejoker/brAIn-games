@@ -1,53 +1,106 @@
 {
   "name": "brainpet",
   "description": "A persistent virtual pet driven by its own LLM. Every interaction comes in on `brainpet.command` with JSON `{action, ...}` or a loose string. Accepted actions: `talk {text}` (conversational message — the pet's LLM replies in character + applies stat effects), `feed [food]`, `play`, `cuddle`, `clean`, `sleep`, `wake`, `rename {name}`, `kill`, `revive`, `status`. Stats (hunger, happiness, energy, cleanliness, bond) decay between interactions; the node schedules its next autonomous tick dynamically based on the stat closest to crossing a threshold. Death is real — if the pet starves it goes to the cemetery (`brainpet.cemetery`) with an LLM-generated epitaph. The brain node is the network's NLU gateway: when the user mentions the pet's name in chat or says something like 'feed' / 'play', the brain forwards it here as the right action.",
-  "tags": ["game", "pet", "tamagotchi", "persistent", "llm"],
+  "tags": [
+    "game",
+    "pet",
+    "tamagotchi",
+    "persistent",
+    "llm"
+  ],
   "default_authority": 0,
   "default_priority": 4,
-  "default_subscriptions": [
-    {
-      "topic": "time.tick",
-      "description": "Heartbeat from the clock node. Drives stat decay between user interactions — without it the pet would only age on commands.",
-      "internal": true
+  "ports": {
+    "inputs": {
+      "time.tick": {
+        "description": "Heartbeat from the clock node. Drives stat decay between user interactions — without it the pet would only age on commands.",
+        "inputSchema": {
+          "type": "object"
+        }
+      },
+      "brainpet.command": {
+        "description": "Sole entry point for the pet. Publish JSON `{action, ...}` or a loose string. `talk {text}` runs the pet's LLM in character against the user's message; `feed [food]` / `play` / `cuddle` / `clean` / `sleep` / `wake` are immediate care actions; `rename {name}` / `kill` / `revive` / `status` are lifecycle. The brain should forward user chat here — mentions of the pet's name or care verbs map to the matching action.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "birth",
+                "talk",
+                "feed",
+                "play",
+                "cuddle",
+                "pet",
+                "clean",
+                "sleep",
+                "wake",
+                "rename",
+                "kill",
+                "revive",
+                "status"
+              ],
+              "description": "Which command to run. `birth` creates a fresh pet; `talk` runs the pet's LLM against `text`; `feed`/`play`/`cuddle`/`pet`/`clean`/`sleep`/`wake` are immediate care actions; `rename` renames the pet to `name`; `kill`/`revive` are lifecycle; `status` republishes current state and cemetery."
+            },
+            "text": {
+              "type": "string",
+              "description": "Required for `talk` — the user's spoken message to the pet."
+            },
+            "food": {
+              "type": "string",
+              "description": "Optional flavour text for `feed` (e.g. 'strawberry pie')."
+            },
+            "name": {
+              "type": "string",
+              "description": "Required for `rename`; optional for `birth` to override the LLM-picked name."
+            },
+            "species": {
+              "type": "string",
+              "description": "Optional for `birth` — freeform species label (default 'fluffball')."
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      }
     },
-    {
-      "topic": "brainpet.command",
-      "description": "Sole entry point for the pet. Publish JSON `{action, ...}` or a loose string. `talk {text}` runs the pet's LLM in character against the user's message; `feed [food]` / `play` / `cuddle` / `clean` / `sleep` / `wake` are immediate care actions; `rename {name}` / `kill` / `revive` / `status` are lifecycle. The brain should forward user chat here — mentions of the pet's name or care verbs map to the matching action.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "enum": ["birth", "talk", "feed", "play", "cuddle", "pet", "clean", "sleep", "wake", "rename", "kill", "revive", "status"],
-            "description": "Which command to run. `birth` creates a fresh pet; `talk` runs the pet's LLM against `text`; `feed`/`play`/`cuddle`/`pet`/`clean`/`sleep`/`wake` are immediate care actions; `rename` renames the pet to `name`; `kill`/`revive` are lifecycle; `status` republishes current state and cemetery."
-          },
-          "text": {
-            "type": "string",
-            "description": "Required for `talk` — the user's spoken message to the pet."
-          },
-          "food": {
-            "type": "string",
-            "description": "Optional flavour text for `feed` (e.g. 'strawberry pie')."
-          },
-          "name": {
-            "type": "string",
-            "description": "Required for `rename`; optional for `birth` to override the LLM-picked name."
-          },
-          "species": {
-            "type": "string",
-            "description": "Optional for `birth` — freeform species label (default 'fluffball')."
-          }
-        },
-        "required": ["action"],
-        "additionalProperties": false
+    "outputs": {
+      "chat.response": {
+        "description": "chat.response"
+      },
+      "brainpet.state": {
+        "description": "brainpet.state"
+      },
+      "brainpet.cemetery": {
+        "description": "brainpet.cemetery"
       }
     }
-  ],
-  "default_publishes": [
-    "chat.response",
-    "brainpet.state",
-    "brainpet.cemetery"
-  ],
+  },
+  "default_port_bindings": {
+    "inputs": {
+      "time.tick": [
+        "time.tick"
+      ],
+      "brainpet.command": [
+        "brainpet.command"
+      ]
+    },
+    "outputs": {
+      "chat.response": [
+        "chat.response"
+      ],
+      "brainpet.state": [
+        "brainpet.state"
+      ],
+      "brainpet.cemetery": [
+        "brainpet.cemetery"
+      ]
+    }
+  },
   "has_ui": true,
-  "supports_transport": ["process"]
+  "supports_transport": [
+    "process"
+  ]
 }

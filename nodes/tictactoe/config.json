@@ -1,34 +1,84 @@
 {
   "name": "tictactoe",
   "description": "Tic-tac-toe (morpion) game service. Human plays X by default, the LLM plays O. Every interaction — starting a round, quitting, and EVERY move — comes in on `game.tictactoe.command` with content either a JSON `{action, mark?, cell?}` or a loose string. Recognised actions: `start` (optionally with `mark: 'X'|'O'`), `quit`, `status`, and `move` (the numpad-indexed cell 1-9 in `cell`). Examples — content=`{\"action\":\"start\"}`, `{\"action\":\"move\",\"cell\":5}`, or loose strings like `start O` / `move 5`. The board is numpad-indexed 1-9 (1=top-left, 5=center, 9=bottom-right). The game emits narrative events on `game.tictactoe.event` (plain text — 'You played cell 5.', 'O played cell 9, you lost.', etc.) and structured state snapshots on `game.tictactoe.state` (JSON). The brain node subscribes to game.tictactoe.event and relays it to the user on chat.response — the game itself does NOT speak to the chat directly.",
-  "tags": ["game", "tictactoe", "morpion", "llm"],
+  "tags": [
+    "game",
+    "tictactoe",
+    "morpion",
+    "llm"
+  ],
   "default_authority": 0,
   "default_priority": 4,
-  "default_subscriptions": [
-    {
-      "topic": "game.tictactoe.command",
-      "description": "Sole entry point for the game. Publish `{\"action\":\"start\"}` to start (optionally with `mark: 'X'|'O'`), `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish current state. To play a move: `{\"action\":\"move\",\"cell\":5}` — cell is the numpad-indexed 1-9 position. The brain node should forward every digit the player types here while a game is active; legality + game logic happen inside the handler.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "action": { "type": "string", "enum": ["start", "quit", "status", "move"] },
-          "mark": { "type": "string", "enum": ["X", "O"] },
-          "cell": {
-            "oneOf": [
-              { "type": "integer", "minimum": 1, "maximum": 9 },
-              { "type": "string", "pattern": "^[1-9]$" }
-            ]
-          }
-        },
-        "required": ["action"],
-        "additionalProperties": false
+  "ports": {
+    "inputs": {
+      "game.tictactoe.command": {
+        "description": "Sole entry point for the game. Publish `{\"action\":\"start\"}` to start (optionally with `mark: 'X'|'O'`), `{\"action\":\"quit\"}` to abandon, `{\"action\":\"status\"}` to publish current state. To play a move: `{\"action\":\"move\",\"cell\":5}` — cell is the numpad-indexed 1-9 position. The brain node should forward every digit the player types here while a game is active; legality + game logic happen inside the handler.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "start",
+                "quit",
+                "status",
+                "move"
+              ]
+            },
+            "mark": {
+              "type": "string",
+              "enum": [
+                "X",
+                "O"
+              ]
+            },
+            "cell": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[1-9]$"
+                }
+              ]
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "outputs": {
+      "chat.response": {
+        "description": "chat.response"
+      },
+      "game.tictactoe.state": {
+        "description": "game.tictactoe.state"
       }
     }
-  ],
-  "default_publishes": [
-    "chat.response",
-    "game.tictactoe.state"
-  ],
+  },
+  "default_port_bindings": {
+    "inputs": {
+      "game.tictactoe.command": [
+        "game.tictactoe.command"
+      ]
+    },
+    "outputs": {
+      "chat.response": [
+        "chat.response"
+      ],
+      "game.tictactoe.state": [
+        "game.tictactoe.state"
+      ]
+    }
+  },
   "has_ui": true,
-  "supports_transport": ["process"]
+  "supports_transport": [
+    "process"
+  ]
 }
